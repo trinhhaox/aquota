@@ -105,21 +105,42 @@ function extractLatestRateLimits(content) {
   return null;
 }
 function toQuota(win, label, color) {
+  if (!win) return null;
   const used = Number(win?.used_percent);
   if (!isFinite(used)) return null;
-  const pct = 100 - Math.max(0, Math.min(100, used));
   let resetTime = "";
   let absResetTime = "";
-  let secs = Number(win?.resets_in_seconds);
-  if (!isFinite(secs) || secs <= 0) {
-    const at = Number(win?.resets_at);
-    if (isFinite(at) && at > 0) secs = at - Math.floor(Date.now() / 1e3);
+  let hasResetSpec = false;
+  let secs = 0;
+  if (win?.resets_in_seconds !== void 0 && win?.resets_in_seconds !== null) {
+    const rawSecs = Number(win.resets_in_seconds);
+    if (isFinite(rawSecs)) {
+      secs = rawSecs;
+      hasResetSpec = true;
+    }
   }
-  if (isFinite(secs) && secs > 0) {
-    const mins = Math.floor(secs / 60);
-    resetTime = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
-    const resetDate = new Date(Date.now() + secs * 1e3);
-    absResetTime = `(${String(resetDate.getHours()).padStart(2, "0")}h${String(resetDate.getMinutes()).padStart(2, "0")})`;
+  if (!hasResetSpec && win?.resets_at !== void 0 && win?.resets_at !== null) {
+    const at = Number(win.resets_at);
+    if (isFinite(at) && at > 0) {
+      secs = at - Math.floor(Date.now() / 1e3);
+      hasResetSpec = true;
+    }
+  }
+  let pct;
+  if (hasResetSpec) {
+    if (secs > 0) {
+      pct = 100 - Math.max(0, Math.min(100, used));
+      const mins = Math.floor(secs / 60);
+      resetTime = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+      const resetDate = new Date(Date.now() + secs * 1e3);
+      absResetTime = `(${String(resetDate.getHours()).padStart(2, "0")}h${String(resetDate.getMinutes()).padStart(2, "0")})`;
+    } else {
+      pct = 100;
+      resetTime = "";
+      absResetTime = "";
+    }
+  } else {
+    pct = 100 - Math.max(0, Math.min(100, used));
   }
   return {
     label,
@@ -1163,43 +1184,6 @@ var globalSidebarProvider = null;
 var refreshTimer = null;
 var lastRefreshAt = 0;
 var notifiedModels = /* @__PURE__ */ new Set();
-function autoDetectGroups(quotas) {
-  const geminiModels = [];
-  const claudeGptModels = [];
-  const otherModels = [];
-  for (const q of quotas) {
-    if (q.label.startsWith("Gemini")) {
-      geminiModels.push(q.label);
-    } else if (q.label.startsWith("Claude") || q.label.startsWith("GPT")) {
-      claudeGptModels.push(q.label);
-    } else {
-      otherModels.push(q.label);
-    }
-  }
-  const groups = [];
-  if (geminiModels.length > 0) {
-    groups.push({
-      id: "gemini",
-      title: "GEMINI MODELS",
-      models: geminiModels
-    });
-  }
-  if (claudeGptModels.length > 0) {
-    groups.push({
-      id: "claude_gpt",
-      title: "CLAUDE / GPT",
-      models: claudeGptModels
-    });
-  }
-  if (otherModels.length > 0) {
-    groups.push({
-      id: "other",
-      title: "OTHER",
-      models: otherModels
-    });
-  }
-  return groups;
-}
 function activate(context) {
   const logger = vscode5.window.createOutputChannel("Aquota");
   context.subscriptions.push(logger);
@@ -1269,12 +1253,51 @@ function escapeXml(s) {
 function formatCleanModelName(label) {
   return label.replace(/^Gemini\s+/i, "").replace(/^Claude\/GPT\s+/i, "").replace(/\s*\(Thinking\)/i, "").replace(/\s*\(Medium\)/i, "").replace(/\s*\(High\)/i, "").replace(/\s*\(Low\)/i, "").trim();
 }
+function groupSharedPools(quotas) {
+  const map = /* @__PURE__ */ new Map();
+  const result = [];
+  for (const q of quotas) {
+    if (!isPercentQuota(q)) {
+      result.push(q);
+      continue;
+    }
+    const clean = formatCleanModelName(q.label);
+    const groupType = q.label.startsWith("Gemini") ? "gemini" : q.label.startsWith("Claude") || q.label.startsWith("GPT") ? "claudegpt" : "other";
+    const key = `${Math.round(q.remaining)}_${q.resetTime}_${groupType}`;
+    if (groupType !== "other") {
+      if (map.has(key)) {
+        map.get(key).models.push(clean);
+      } else {
+        map.set(key, {
+          label: groupType === "gemini" ? "Gemini Models" : "Claude & GPT Models",
+          models: [clean],
+          q
+        });
+      }
+    } else {
+      result.push(q);
+    }
+  }
+  for (const entry of map.values()) {
+    if (entry.models.length > 1) {
+      const subSummary = entry.models.map((m) => m.replace(/Flash|Pro|Sonnet|Opus/i, "").trim()).filter(Boolean).join(", ");
+      result.push({
+        ...entry.q,
+        label: entry.label,
+        style: subSummary ? `(${subSummary})` : "Shared Pool"
+      });
+    } else {
+      result.push(entry.q);
+    }
+  }
+  return result;
+}
 function buildTooltipSVG(data) {
-  const groupHeaderHeight = 24;
-  const padding = 16;
-  const width = 440;
+  const groupHeaderHeight = 20;
+  const padding = 12;
+  const width = 340;
   let contentHtml = "";
-  let currentY = padding + 22;
+  let currentY = padding + 18;
   let minHealth = 100;
   const checkHealth = (quotas) => {
     if (!quotas) return;
@@ -1289,13 +1312,13 @@ function buildTooltipSVG(data) {
   checkHealth(data.codex?.quotas);
   const badgeColor = minHealth > 50 ? "#10B981" : minHealth > 20 ? "#F59E0B" : "#EF4444";
   const badgeText = minHealth > 50 ? "ALL NORMAL" : minHealth > 20 ? "MODERATE" : "LOW QUOTA";
-  contentHtml += `<text x="${padding}" y="${padding + 10}" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="900" fill="#38BDF8" letter-spacing="0.8">\u26A1 AQUOTA</text>`;
-  contentHtml += `<rect x="${width - padding - 82}" y="${padding - 2}" width="82" height="17" rx="8.5" fill="${badgeColor}" fill-opacity="0.15" stroke="${badgeColor}" stroke-opacity="0.4" stroke-width="1"/>`;
-  contentHtml += `<circle cx="${width - padding - 73}" cy="${padding + 6.5}" r="2.5" fill="${badgeColor}"/>`;
-  contentHtml += `<text x="${width - padding - 65}" y="${padding + 10}" font-family="system-ui, -apple-system, sans-serif" font-size="8.5" font-weight="700" fill="${badgeColor}">${badgeText}</text>`;
+  contentHtml += `<text x="${padding}" y="${padding + 9}" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" font-weight="900" fill="#38BDF8" letter-spacing="0.8">\u26A1 AQUOTA</text>`;
+  contentHtml += `<rect x="${width - padding - 74}" y="${padding - 3}" width="74" height="15" rx="7.5" fill="${badgeColor}" fill-opacity="0.15" stroke="${badgeColor}" stroke-opacity="0.4" stroke-width="0.8"/>`;
+  contentHtml += `<circle cx="${width - padding - 66}" cy="${padding + 4.5}" r="2" fill="${badgeColor}"/>`;
+  contentHtml += `<text x="${width - padding - 59}" y="${padding + 7.5}" font-family="system-ui, -apple-system, sans-serif" font-size="7.5" font-weight="700" fill="${badgeColor}">${badgeText}</text>`;
   const renderGroupSection = (title, quotas, accentColor = "#64748B") => {
     if (!quotas || quotas.length === 0) return;
-    contentHtml += `<text x="${padding}" y="${currentY + 12}" font-family="system-ui, -apple-system, sans-serif" font-size="10" font-weight="800" fill="${accentColor}" letter-spacing="0.5">${escapeXml(title)}</text>`;
+    contentHtml += `<text x="${padding}" y="${currentY + 10}" font-family="system-ui, -apple-system, sans-serif" font-size="9" font-weight="800" fill="${accentColor}" letter-spacing="0.6">${escapeXml(title)}</text>`;
     currentY += groupHeaderHeight;
     quotas.forEach((q) => {
       const pct = Math.round(q.remaining);
@@ -1304,41 +1327,38 @@ function buildTooltipSVG(data) {
       const cleanName = formatCleanModelName(q.label);
       const sessionReset = formatSessionResetText(q.resetTime, q.absResetTime);
       if (!isPercent) {
-        const infoHeight = 32;
-        contentHtml += `<rect x="${padding}" y="${currentY}" width="${width - padding * 2}" height="${infoHeight - 4}" rx="6" fill="#FFFFFF" fill-opacity="0.035"/>`;
-        contentHtml += `<text x="${padding + 12}" y="${currentY + 18}" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="600" fill="#E2E8F0">${escapeXml(cleanName)}</text>`;
-        contentHtml += `<text x="${width - padding - 12}" y="${currentY + 18}" text-anchor="end" font-family="ui-monospace, SFMono-Regular, monospace" font-size="11" font-weight="bold" fill="#69F0AE">${escapeXml(q.displayValue || "")}</text>`;
+        const infoHeight = 24;
+        contentHtml += `<rect x="${padding}" y="${currentY}" width="${width - padding * 2}" height="${infoHeight - 4}" rx="4" fill="#FFFFFF" fill-opacity="0.03"/>`;
+        contentHtml += `<text x="${padding + 8}" y="${currentY + 14}" font-family="system-ui, -apple-system, sans-serif" font-size="9.5" font-weight="600" fill="#CBD5E1">${escapeXml(cleanName)}</text>`;
+        contentHtml += `<text x="${width - padding - 8}" y="${currentY + 14}" text-anchor="end" font-family="ui-monospace, SFMono-Regular, monospace" font-size="9.5" font-weight="bold" fill="#69F0AE">${escapeXml(q.displayValue || "")}</text>`;
         currentY += infoHeight;
       } else {
-        const cardHeight = 54;
+        const cardHeight = 36;
         const cardWidth = width - padding * 2;
-        const trackWidth = cardWidth - 24;
-        const fillWidth = Math.max(3, pct / 100 * trackWidth);
-        const isSession = cleanName.includes("Session") || cleanName.includes("5hr") || cleanName.includes("5-Hour");
-        const isWeekly = cleanName.includes("Weekly") || cleanName.includes("7day") || cleanName.includes("7-Day");
-        const subLabel = isSession ? "5-hour window" : isWeekly ? "7-day window" : title.includes("CLAUDE CODE") ? "5-hour window" : "Shared Pool";
-        contentHtml += `<rect x="${padding}" y="${currentY}" width="${cardWidth}" height="${cardHeight - 6}" rx="8" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-opacity="0.05" stroke-width="1"/>`;
-        contentHtml += `<circle cx="${padding + 12}" cy="${currentY + 13}" r="3" fill="${color.hex}"/>`;
-        contentHtml += `<text x="${padding + 20}" y="${currentY + 16}" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#F1F5F9">${escapeXml(cleanName)}</text>`;
-        contentHtml += `<text x="${width - padding - 12}" y="${currentY + 16}" text-anchor="end" font-family="system-ui, -apple-system, sans-serif" font-size="9" font-weight="500" fill="#64748B">${escapeXml(subLabel)}</text>`;
-        const barY = currentY + 23;
-        contentHtml += `<rect x="${padding + 12}" y="${barY}" width="${trackWidth}" height="5" rx="2.5" fill="#FFFFFF" fill-opacity="0.08"/>`;
-        contentHtml += `<rect x="${padding + 12}" y="${barY}" width="${fillWidth}" height="5" rx="2.5" fill="${color.hex}" fill-opacity="0.95"/>`;
-        const textY = currentY + 41;
-        contentHtml += `<text x="${padding + 12}" y="${textY}" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="800" fill="${color.hex}">${pct}% <tspan font-weight="500" font-size="9.5" fill="#94A3B8">left</tspan></text>`;
-        contentHtml += `<text x="${width - padding - 12}" y="${textY}" text-anchor="end" font-family="ui-monospace, SFMono-Regular, monospace" font-size="9.5" font-weight="500" fill="#94A3B8">${escapeXml(sessionReset)}</text>`;
+        const trackWidth = cardWidth - 16;
+        const fillWidth = Math.max(2.5, pct / 100 * trackWidth);
+        let subLabel = q.style && q.style !== "fluid" ? q.style : "";
+        if (!subLabel) {
+          const isSession = cleanName.includes("Session") || cleanName.includes("5hr") || cleanName.includes("5-Hour");
+          const isWeekly = cleanName.includes("Weekly") || cleanName.includes("7day") || cleanName.includes("7-Day");
+          subLabel = isSession ? "5h window" : isWeekly ? "7d window" : "Shared Pool";
+        }
+        contentHtml += `<rect x="${padding}" y="${currentY}" width="${cardWidth}" height="${cardHeight - 4}" rx="6" fill="#FFFFFF" fill-opacity="0.025" stroke="#FFFFFF" stroke-opacity="0.05" stroke-width="0.8"/>`;
+        contentHtml += `<circle cx="${padding + 8}" cy="${currentY + 11}" r="2.5" fill="${color.hex}"/>`;
+        contentHtml += `<text x="${padding + 15}" y="${currentY + 14}" font-family="system-ui, -apple-system, sans-serif" font-size="9.5" font-weight="700" fill="#F1F5F9">${escapeXml(cleanName)} <tspan font-size="8" font-weight="500" fill="#64748B">${escapeXml(subLabel)}</tspan></text>`;
+        const resetPart = sessionReset ? ` <tspan font-size="8" font-weight="500" fill="#94A3B8">\xB7 ${escapeXml(sessionReset)}</tspan>` : "";
+        contentHtml += `<text x="${width - padding - 8}" y="${currentY + 14}" text-anchor="end" font-family="system-ui, -apple-system, sans-serif" font-size="9.5" font-weight="800" fill="${color.hex}">${pct}%${resetPart}</text>`;
+        const barY = currentY + 21;
+        contentHtml += `<rect x="${padding + 8}" y="${barY}" width="${trackWidth}" height="3.5" rx="1.75" fill="#FFFFFF" fill-opacity="0.08"/>`;
+        contentHtml += `<rect x="${padding + 8}" y="${barY}" width="${fillWidth}" height="3.5" rx="1.75" fill="${color.hex}" fill-opacity="0.95"/>`;
         currentY += cardHeight;
       }
     });
-    contentHtml += `<line x1="${padding}" y1="${currentY - 2}" x2="${width - padding}" y2="${currentY - 2}" stroke="#252C3F" stroke-width="1" stroke-opacity="0.6"/>`;
-    currentY += 6;
+    currentY += 4;
   };
   if (data.antigravity?.quotas) {
-    const groups = autoDetectGroups(data.antigravity.quotas);
-    groups.forEach((group) => {
-      const members = data.antigravity.quotas.filter((q) => group.models.includes(q.label));
-      renderGroupSection(`ANTIGRAVITY \xB7 ${group.title}`, members, "#38BDF8");
-    });
+    const pooled = groupSharedPools(data.antigravity.quotas);
+    renderGroupSection("ANTIGRAVITY IDE", pooled, "#38BDF8");
   }
   if (data.claude?.quotas) {
     renderGroupSection("CLAUDE CODE (CLI)", data.claude.quotas, "#FB923C");
@@ -1349,7 +1369,7 @@ function buildTooltipSVG(data) {
   const totalHeight = currentY + 6;
   return `
     <svg width="${width}" height="${totalHeight}" viewBox="0 0 ${width} ${totalHeight}" xmlns="http://www.w3.org/2000/svg">
-        <rect width="${width}" height="${totalHeight}" rx="12" fill="#12151E" stroke="#252C3F" stroke-width="1.2"/>
+        <rect width="${width}" height="${totalHeight}" rx="10" fill="#12151E" stroke="#252C3F" stroke-width="1"/>
         ${contentHtml}
     </svg>`;
 }

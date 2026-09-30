@@ -62,25 +62,49 @@ function extractLatestRateLimits(content: string): any | null {
 }
 
 function toQuota(win: any, label: string, color: string): QuotaInfo | null {
+    if (!win) return null;
     const used = Number(win?.used_percent);
     if (!isFinite(used)) return null;
-    // Logs report used % — convert to remaining (countdown 100% → 0%)
-    const pct = 100 - Math.max(0, Math.min(100, used));
 
     let resetTime = '';
     let absResetTime = '';
-    // Codex CLI versions vary: older logs use resets_in_seconds (relative),
-    // newer ones use resets_at (unix epoch seconds).
-    let secs = Number(win?.resets_in_seconds);
-    if (!isFinite(secs) || secs <= 0) {
-        const at = Number(win?.resets_at);
-        if (isFinite(at) && at > 0) secs = at - Math.floor(Date.now() / 1000);
+    let hasResetSpec = false;
+    let secs = 0;
+
+    if (win?.resets_in_seconds !== undefined && win?.resets_in_seconds !== null) {
+        const rawSecs = Number(win.resets_in_seconds);
+        if (isFinite(rawSecs)) {
+            secs = rawSecs;
+            hasResetSpec = true;
+        }
     }
-    if (isFinite(secs) && secs > 0) {
-        const mins = Math.floor(secs / 60);
-        resetTime = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
-        const resetDate = new Date(Date.now() + secs * 1000);
-        absResetTime = `(${String(resetDate.getHours()).padStart(2, '0')}h${String(resetDate.getMinutes()).padStart(2, '0')})`;
+
+    if (!hasResetSpec && win?.resets_at !== undefined && win?.resets_at !== null) {
+        const at = Number(win.resets_at);
+        if (isFinite(at) && at > 0) {
+            secs = at - Math.floor(Date.now() / 1000);
+            hasResetSpec = true;
+        }
+    }
+
+    let pct: number;
+    if (hasResetSpec) {
+        if (secs > 0) {
+            // Window is currently active and resetting in the future
+            pct = 100 - Math.max(0, Math.min(100, used));
+            const mins = Math.floor(secs / 60);
+            resetTime = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+            const resetDate = new Date(Date.now() + secs * 1000);
+            absResetTime = `(${String(resetDate.getHours()).padStart(2, '0')}h${String(resetDate.getMinutes()).padStart(2, '0')})`;
+        } else {
+            // Reset time has already passed! The window is fully refreshed.
+            pct = 100;
+            resetTime = '';
+            absResetTime = '';
+        }
+    } else {
+        // No reset window specified, fallback to standard percentage
+        pct = 100 - Math.max(0, Math.min(100, used));
     }
 
     return {

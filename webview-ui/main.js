@@ -26,6 +26,11 @@ const TRANSLATIONS = {
         left: 'còn lại',
         fiveHourLimit: 'Hạn mức 5 giờ còn lại',
         weeklyLimit: 'Hạn mức tuần còn lại',
+        activeModelLabel: 'Mô hình hoạt động',
+        codexSessionQuota: 'Hạn mức phiên làm việc OpenAI Codex.',
+        codexFullyRefreshed: 'Hạn mức đã được làm mới hoàn toàn.',
+        codexModelDesc: 'Mô hình hiện tại cho phiên OpenAI Codex CLI.',
+        rateLimitRefreshDesc: 'Hạn mức sẽ được làm mới sau {time}.',
         settingsHeader: 'CÀI ĐẶT',
         langLabel: 'Ngôn ngữ (Language)',
         usagePeriodLabel: 'Chu kỳ sử dụng Claude',
@@ -71,6 +76,11 @@ const TRANSLATIONS = {
         left: 'left',
         fiveHourLimit: 'Five Hour Limit Remaining',
         weeklyLimit: 'Weekly Limit Remaining',
+        activeModelLabel: 'Active Model',
+        codexSessionQuota: 'OpenAI Codex session quota.',
+        codexFullyRefreshed: 'Rate limit is currently fully refreshed.',
+        codexModelDesc: 'Current model selected for OpenAI Codex CLI sessions.',
+        rateLimitRefreshDesc: 'Rate limit will fully refresh in {time}.',
         settingsHeader: 'SETTINGS',
         langLabel: 'Language',
         usagePeriodLabel: 'Claude Usage Period',
@@ -315,13 +325,27 @@ function renderLimitGroup(group, subtitle, icon) {
 
         const divider = index < group.items.length - 1 ? '<div class="limit-row-divider"></div>' : '';
 
+        let displayLabel = item.label;
+        if (item.label === 'Five Hour Limit Remaining') displayLabel = t('fiveHourLimit');
+        else if (item.label === 'Weekly Limit Remaining') displayLabel = t('weeklyLimit');
+        else if (item.label === 'Active Model') displayLabel = t('activeModelLabel');
+
+        let displayDesc = item.description || '';
+        if (displayDesc === 'OpenAI Codex session quota.') displayDesc = t('codexSessionQuota');
+        else if (displayDesc === 'Quota is fully refreshed.' || displayDesc === 'Rate limit is currently fully refreshed.') displayDesc = t('codexFullyRefreshed');
+        else if (displayDesc === 'Current model selected for OpenAI Codex CLI sessions.') displayDesc = t('codexModelDesc');
+        else if (displayDesc.startsWith('Rate limit will fully refresh in ')) {
+            const timeMatch = displayDesc.replace('Rate limit will fully refresh in ', '').replace('.', '');
+            displayDesc = t('rateLimitRefreshDesc', { time: timeMatch });
+        }
+
         rowsHtml += `
             <div class="limit-row">
                 <div class="limit-row-header">
-                    <span class="limit-name">${escapeHtml(item.label)}</span>
+                    <span class="limit-name">${escapeHtml(displayLabel)}</span>
                     ${statRightHtml}
                 </div>
-                <div class="limit-desc">${escapeHtml(item.description)}</div>
+                <div class="limit-desc">${escapeHtml(displayDesc)}</div>
             </div>
             ${divider}
         `;

@@ -1,5 +1,12 @@
 # Changelog - Aquota
 
+## [2.2.1] - 2026-10-01
+
+### Compact Status Bar Hover & OpenAI Codex Rate Limit Fix
+- **Khắc phục lỗi hiển thị Quota OpenAI Codex:** Sửa logic tính toán hạn mức khi thời điểm reset (`resets_at`) đã trôi qua. Tự động phục hồi hạn mức về 100% thay vì bị giữ nguyên mốc 0% cũ do CLI chưa chạy thêm prompt mới.
+- **Thiết kế lại Tooltip Status Bar Compact:** Thu gọn kích thước popup hover (giảm chiều cao hơn 60% từ ~800px xuống ~340px, chiều rộng 340px), gom nhóm thông minh các model dùng chung hồ (Shared Pool), khắc phục triệt để lỗi popup bị đè và tràn viền màn hình dưới đáy.
+- **Bổ sung bản dịch tiếng Việt chi tiết:** Hoàn thiện dịch thuật cho các nhãn hạn mức phiên OpenAI Codex, mô hình hoạt động và đếm ngược thời gian hồi phục.
+
 ## [2.2.0] - 2026-10-01
 
 ### Bilingual Support (Tiếng Việt & English) & Refresh Interval Fix
