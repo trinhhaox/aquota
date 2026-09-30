@@ -2,7 +2,7 @@
   "name": "aquota",
   "displayName": "Aquota",
   "description": "Real-time AI Quota Monitor for Antigravity IDE, Claude Code, and OpenAI Codex.",
-  "version": "2.1.2",
+  "version": "2.2.0",
   "publisher": "BiViPi",
   "author": {
     "name": "BiViPi",
@@ -56,6 +56,19 @@
     "configuration": {
       "title": "Aquota",
       "properties": {
+        "sqm.language": {
+          "type": "string",
+          "enum": [
+            "vi",
+            "en"
+          ],
+          "enumDescriptions": [
+            "Tiếng Việt",
+            "English"
+          ],
+          "default": "vi",
+          "description": "Interface language for Aquota (Tiếng Việt or English)."
+        },
         "sqm.refreshInterval": {
           "type": "number",
           "default": 5,

@@ -86,13 +86,15 @@ export function activate(context: vscode.ExtensionContext) {
     // Quick Pick menu opened from the status bar item
     context.subscriptions.push(
         vscode.commands.registerCommand("sqm.menu", async () => {
+            const lang = vscode.workspace.getConfiguration("sqm").get<string>("language") || "vi";
+            const isVi = lang === "vi";
             type MenuItem = vscode.QuickPickItem & { id: string };
             const items: MenuItem[] = [
-                { id: 'refresh', label: '$(refresh) Refresh quotas now' },
-                { id: 'dashboard', label: '$(dashboard) Open Aquota Dashboard' },
-                { id: 'settings', label: '$(gear) Extension settings' }
+                { id: 'refresh', label: isVi ? '$(refresh) Làm mới quota ngay' : '$(refresh) Refresh quotas now' },
+                { id: 'dashboard', label: isVi ? '$(dashboard) Mở Bảng điều khiển Aquota' : '$(dashboard) Open Aquota Dashboard' },
+                { id: 'settings', label: isVi ? '$(gear) Cài đặt tiện ích' : '$(gear) Extension settings' }
             ];
-            const pick = await vscode.window.showQuickPick(items, { placeHolder: 'Aquota Quick Menu' });
+            const pick = await vscode.window.showQuickPick(items, { placeHolder: isVi ? 'Menu nhanh Aquota' : 'Aquota Quick Menu' });
             switch (pick?.id) {
                 case 'refresh': triggerRefresh(); break;
                 case 'dashboard': vscode.commands.executeCommand('sqm.sidebar.focus'); break;
@@ -110,7 +112,7 @@ export function activate(context: vscode.ExtensionContext) {
         if (e.affectsConfiguration("sqm.refreshInterval")) {
             startAutoRefresh();
         }
-        if (e.affectsConfiguration("sqm.statusBar.mode") || e.affectsConfiguration("sqm.statusBar.usagePeriod")) {
+        if (e.affectsConfiguration("sqm.statusBar.mode") || e.affectsConfiguration("sqm.statusBar.usagePeriod") || e.affectsConfiguration("sqm.language")) {
             refreshStatusBar();
         }
     }));
@@ -416,7 +418,12 @@ function refreshStatusBar() {
     const name = latestQuotaData.antigravity?.name || "User";
     const tier = latestQuotaData.antigravity?.tier || "";
     const tierDisplay = tier ? ` (${tier})` : "";
-    tooltip.appendMarkdown(`&nbsp;&nbsp;⚡ **Aquota** · 👤 **${name}**${tierDisplay} &nbsp;&nbsp;·&nbsp;&nbsp; [🔄 Refresh](command:sqm.refresh) &nbsp;|&nbsp; [📊 Dashboard](command:sqm.sidebar.focus) &nbsp;|&nbsp; [⚙️ Settings](command:sqm.menu)`);
+    const lang = vscode.workspace.getConfiguration("sqm").get<string>("language") || "vi";
+    const isVi = lang === "vi";
+    const refreshText = isVi ? "🔄 Làm mới" : "🔄 Refresh";
+    const dashboardText = isVi ? "📊 Bảng điều khiển" : "📊 Dashboard";
+    const settingsText = isVi ? "⚙️ Cài đặt" : "⚙️ Settings";
+    tooltip.appendMarkdown(`&nbsp;&nbsp;⚡ **Aquota** · 👤 **${name}**${tierDisplay} &nbsp;&nbsp;·&nbsp;&nbsp; [${refreshText}](command:sqm.refresh) &nbsp;|&nbsp; [${dashboardText}](command:sqm.sidebar.focus) &nbsp;|&nbsp; [${settingsText}](command:sqm.menu)`);
     statusBarItem.tooltip = tooltip;
 }
 
@@ -464,6 +471,8 @@ function checkNotifications(data: DashboardData) {
     const config = vscode.workspace.getConfiguration("sqm");
     if (!config.get<boolean>("enableNotifications")) return;
     const threshold = Math.max(1, Math.min(90, config.get<number>("notifyThreshold") || 20));
+    const lang = config.get<string>("language") || "vi";
+    const isVi = lang === "vi";
 
     const checkQuota = (serviceName: string, quotas: QuotaInfo[]) => {
         if (!quotas) return;
@@ -479,10 +488,13 @@ function checkNotifications(data: DashboardData) {
 
             if (notifiedModels.has(modelKey)) return;
 
-            const message = `${serviceName} [${q.label}] quota is low (${pct}% remaining).`;
+            const message = isVi
+                ? `Hạn mức ${serviceName} [${q.label}] sắp hết (còn ${pct}%).`
+                : `${serviceName} [${q.label}] quota is low (${pct}% remaining).`;
+            const dashboardBtn = isVi ? "Bảng điều khiển" : "Dashboard";
 
-            vscode.window.showWarningMessage(message, "Dashboard").then(selection => {
-                if (selection === "Dashboard") {
+            vscode.window.showWarningMessage(message, dashboardBtn).then(selection => {
+                if (selection === dashboardBtn) {
                     vscode.commands.executeCommand("sqm.sidebar.focus");
                 }
             });

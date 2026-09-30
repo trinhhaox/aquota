@@ -1,5 +1,124 @@
 const vscode = acquireVsCodeApi();
 
+const TRANSLATIONS = {
+    vi: {
+        refreshBtn: 'Làm mới',
+        refreshTitle: 'Làm mới hạn mức',
+        settingsTitle: 'Cài đặt',
+        serverOfflineTitle: 'Máy chủ Antigravity Ngoại Tuyến',
+        serverOfflineDesc: 'Hãy đảm bảo Antigravity IDE đang chạy để theo dõi hạn mức mô hình.',
+        noActiveTitle: 'Không có dịch vụ AI nào đang hoạt động',
+        noActiveDesc: 'Hãy đảm bảo Antigravity IDE đang chạy, hoặc đăng nhập Claude Code / Codex.',
+        connecting: 'Đang kết nối dịch vụ AI...',
+        refreshing: 'Đang làm mới hạn mức...',
+        fetchingLive: 'Đang tải hạn mức thời gian thực...',
+        currentModelDesc: 'Mô hình hiện tại cho phiên làm việc.',
+        fullLimit: 'Hạn mức khả dụng 100%, {reset}.',
+        hitLimit: 'Bạn đã dùng hết hạn mức, {reset}.',
+        usedSome: 'Đã sử dụng một phần hạn mức, {reset}.',
+        resetsToday: 'Đặt lại hôm nay lúc {time}',
+        resetsTomorrow: 'Đặt lại ngày mai lúc {time}',
+        resetsIn: 'Đặt lại sau {time}',
+        ready: 'Sẵn sàng',
+        fiveHourWindow: 'Khung 5 giờ',
+        sevenDayWindow: 'Khung 7 ngày',
+        sharedPool: 'Hồ dùng chung',
+        left: 'còn lại',
+        fiveHourLimit: 'Hạn mức 5 giờ còn lại',
+        weeklyLimit: 'Hạn mức tuần còn lại',
+        settingsHeader: 'CÀI ĐẶT',
+        langLabel: 'Ngôn ngữ (Language)',
+        usagePeriodLabel: 'Chu kỳ sử dụng Claude',
+        usage5h: '5 Giờ',
+        usage7d: '7 Ngày',
+        usageBoth: 'Cả hai',
+        refreshIntervalLabel: 'Tần suất làm mới (phút)',
+        notificationsLabel: 'Thông báo khi sắp hết',
+        notifyThresholdLabel: 'Ngưỡng thông báo (%)',
+        statusBarLabel: 'Thanh trạng thái',
+        sbFull: 'Đầy đủ',
+        sbCompact: 'Thu gọn',
+        sbDot: 'Chỉ chấm tròn',
+        saveBtn: 'Lưu cài đặt',
+        savingBtn: 'Đang lưu...',
+        savedBtn: 'Đã lưu ✓',
+        dayAbbr: 'ngày',
+        hourAbbr: 'giờ',
+        minAbbr: 'phút'
+    },
+    en: {
+        refreshBtn: 'Refresh',
+        refreshTitle: 'Refresh Quotas',
+        settingsTitle: 'Settings',
+        serverOfflineTitle: 'Antigravity Server Offline',
+        serverOfflineDesc: 'Ensure Antigravity IDE is running to monitor model quotas.',
+        noActiveTitle: 'No AI Services Active',
+        noActiveDesc: 'Ensure Antigravity IDE is running, or sign in to Claude Code / Codex.',
+        connecting: 'Connecting to AI services...',
+        refreshing: 'Refreshing quotas...',
+        fetchingLive: 'Fetching live quotas...',
+        currentModelDesc: 'Current model selected for session.',
+        fullLimit: 'You have full limit available, {reset}.',
+        hitLimit: 'You have hit your limit, {reset}.',
+        usedSome: 'You have used some of your limit, {reset}.',
+        resetsToday: 'Resets today at {time}',
+        resetsTomorrow: 'Resets tomorrow at {time}',
+        resetsIn: 'Resets in {time}',
+        ready: 'Ready',
+        fiveHourWindow: '5-hour window',
+        sevenDayWindow: '7-day window',
+        sharedPool: 'Shared Pool',
+        left: 'left',
+        fiveHourLimit: 'Five Hour Limit Remaining',
+        weeklyLimit: 'Weekly Limit Remaining',
+        settingsHeader: 'SETTINGS',
+        langLabel: 'Language',
+        usagePeriodLabel: 'Claude Usage Period',
+        usage5h: '5 Hour',
+        usage7d: '7 Day',
+        usageBoth: 'Both',
+        refreshIntervalLabel: 'Refresh Interval (min)',
+        notificationsLabel: 'Notifications',
+        notifyThresholdLabel: 'Notify Threshold (%)',
+        statusBarLabel: 'Status Bar',
+        sbFull: 'Full',
+        sbCompact: 'Compact',
+        sbDot: 'Dot only',
+        saveBtn: 'Save',
+        savingBtn: 'Saving...',
+        savedBtn: 'Saved ✓',
+        dayAbbr: 'd',
+        hourAbbr: 'h',
+        minAbbr: 'm'
+    }
+};
+
+let currentLang = 'vi';
+let cachedDashboardData = null;
+let cachedSettingsData = null;
+
+function t(key, params = {}) {
+    const dict = TRANSLATIONS[currentLang] || TRANSLATIONS.vi;
+    let str = dict[key] || TRANSLATIONS.en[key] || key;
+    for (const [k, v] of Object.entries(params)) {
+        str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), v);
+    }
+    return str;
+}
+
+function updateStaticHeaderI18n() {
+    const refreshBtn = document.getElementById('refresh-btn');
+    if (refreshBtn) {
+        refreshBtn.title = t('refreshTitle');
+        const textSpan = refreshBtn.querySelector('span:not(.refresh-icon)');
+        if (textSpan) textSpan.textContent = t('refreshBtn');
+    }
+    const settingsBtn = document.getElementById('settings-btn');
+    if (settingsBtn) {
+        settingsBtn.title = t('settingsTitle');
+    }
+}
+
 function escapeHtml(str) {
     if (typeof str !== 'string') return '';
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -9,24 +128,34 @@ window.addEventListener("message", (event) => {
     const message = event.data;
     switch (message.type) {
         case "update":
+            cachedDashboardData = message.data;
             renderDashboard(message.data);
             break;
         case "loading":
             document.getElementById('quota-list').innerHTML = `
                 <div class="loading-state">
                     <div class="spinner"></div>
-                    <span>Refreshing quotas...</span>
+                    <span>${escapeHtml(t('refreshing'))}</span>
                 </div>
             `;
             break;
         case "settings":
+            if (message.settings && message.settings.language) {
+                currentLang = message.settings.language;
+                updateStaticHeaderI18n();
+            }
+            cachedSettingsData = message.settings;
             renderSettingsData(message.settings);
+            if (cachedDashboardData) {
+                renderDashboard(cachedDashboardData);
+            }
             break;
     }
 });
 
 // Request initial data immediately on load
 vscode.postMessage({ type: "onRefresh" });
+vscode.postMessage({ type: "getSettings" });
 
 document.getElementById('refresh-btn').addEventListener('click', () => {
     const btn = document.getElementById('refresh-btn');
@@ -34,7 +163,7 @@ document.getElementById('refresh-btn').addEventListener('click', () => {
     document.getElementById('quota-list').innerHTML = `
         <div class="loading-state">
             <div class="spinner"></div>
-            <span>Fetching live quotas...</span>
+            <span>${escapeHtml(t('fetchingLive'))}</span>
         </div>
     `;
     vscode.postMessage({ type: 'onRefresh' });
@@ -64,8 +193,8 @@ function renderDashboard(data) {
         document.getElementById('quota-list').innerHTML = `
             <div class="error-card">
                 <div class="error-icon">⚠️</div>
-                <div class="error-title">Antigravity Server Offline</div>
-                <div class="error-desc">Ensure Antigravity IDE is running to monitor model quotas.</div>
+                <div class="error-title">${escapeHtml(t('serverOfflineTitle'))}</div>
+                <div class="error-desc">${escapeHtml(t('serverOfflineDesc'))}</div>
             </div>
         `;
         return;
@@ -122,8 +251,8 @@ function renderDashboard(data) {
         html = `
             <div class="error-card">
                 <div class="error-icon">🔍</div>
-                <div class="error-title">No AI Services Active</div>
-                <div class="error-desc">Ensure Antigravity IDE is running, or sign in to Claude Code / Codex.</div>
+                <div class="error-title">${escapeHtml(t('noActiveTitle'))}</div>
+                <div class="error-desc">${escapeHtml(t('noActiveDesc'))}</div>
             </div>
         `;
     }
@@ -218,7 +347,6 @@ function renderLimitGroup(group, subtitle, icon) {
     `;
 }
 
-
 // Five-stop health scale — full → empty maps green → lime → yellow → orange → red
 function healthColor(pct) {
     if (pct >= 70) return '#22c55e';
@@ -264,18 +392,26 @@ function renderServiceGroup(serviceKey, status) {
                 label: q.label,
                 remaining: 0,
                 displayValue: q.displayValue || '',
-                description: 'Current model selected for session.'
+                description: t('currentModelDesc')
             };
         }
         const timeFormatted = formatSessionResetText(q.resetTime, q.absResetTime);
         const isSession = q.label.includes('Session') || q.label.includes('5hr');
-        const defaultName = isSession ? 'Five Hour Limit Remaining' : (q.label.includes('Weekly') || q.label.includes('7day') ? 'Weekly Limit Remaining' : q.label);
+        const defaultName = isSession ? t('fiveHourLimit') : (q.label.includes('Weekly') || q.label.includes('7day') ? t('weeklyLimit') : q.label);
+        
+        let desc = '';
+        if (q.remaining === 100) {
+            desc = t('fullLimit', { reset: timeFormatted });
+        } else if (q.remaining === 0) {
+            desc = t('hitLimit', { reset: timeFormatted });
+        } else {
+            desc = t('usedSome', { reset: timeFormatted });
+        }
+
         return {
             label: defaultName,
             remaining: Math.round(q.remaining),
-            description: q.remaining === 100
-                ? `You have full limit available, ${timeFormatted}.`
-                : (q.remaining === 0 ? `You have hit your limit, ${timeFormatted}.` : `You have used some of your limit, ${timeFormatted}.`),
+            description: desc,
             resetTimeText: q.resetTime
         };
     });
@@ -288,20 +424,20 @@ function renderServiceGroup(serviceKey, status) {
     }, subtitle, meta.icon);
 }
 
-function formatTime(t) {
-    if (!t) return '';
-    const hMatch = t.match(/(\d+)h/);
-    const mMatch = t.match(/(\d+)m/);
-    if (!hMatch && !mMatch) return t;
+function formatTime(tStr) {
+    if (!tStr) return '';
+    const hMatch = tStr.match(/(\d+)h/);
+    const mMatch = tStr.match(/(\d+)m/);
+    if (!hMatch && !mMatch) return tStr;
     const h = hMatch ? parseInt(hMatch[1]) : 0;
     const m = mMatch ? parseInt(mMatch[1]) : 0;
-    if (h >= 24) return `${Math.floor(h / 24)}d ${h % 24}h ${m}m`;
-    return `${h}h ${m}m`;
+    if (h >= 24) return `${Math.floor(h / 24)}${t('dayAbbr')} ${h % 24}${t('hourAbbr')} ${m}${t('minAbbr')}`;
+    return `${h}${t('hourAbbr')} ${m}${t('minAbbr')}`;
 }
 
 function formatSessionResetText(resetTime, absResetTime) {
     if (!resetTime || resetTime === 'Ready' || resetTime === 'Refreshing...') {
-        return resetTime || 'Ready';
+        return resetTime ? (resetTime === 'Ready' ? t('ready') : t('refreshing')) : t('ready');
     }
 
     const absMatch = absResetTime ? absResetTime.match(/\(?(\d{1,2})h(\d{2})\)?/) : null;
@@ -317,15 +453,15 @@ function formatSessionResetText(resetTime, absResetTime) {
         const resetDate = new Date(now.getTime() + (totalHours * 60 + totalMins) * 60 * 1000);
         const isToday = resetDate.getDate() === now.getDate();
         if (timeFormatted) {
-            return isToday ? `Resets today at ${timeFormatted}` : `Resets tomorrow at ${timeFormatted}`;
+            return isToday ? t('resetsToday', { time: timeFormatted }) : t('resetsTomorrow', { time: timeFormatted });
         }
-        return `Resets in ${formatTime(resetTime)}`;
+        return t('resetsIn', { time: formatTime(resetTime) });
     }
 
     const days = Math.floor(totalHours / 24);
     const remHours = totalHours % 24;
-    const inText = `${days}d ${remHours}h`;
-    return absResetTime ? `Resets in ${inText} ${absResetTime}` : `Resets in ${inText}`;
+    const inText = `${days}${t('dayAbbr')} ${remHours}${t('hourAbbr')}`;
+    return absResetTime ? `${t('resetsIn', { time: inText })} ${absResetTime}` : t('resetsIn', { time: inText });
 }
 
 // Extract the last N history points for one "Service-Label" key
@@ -372,7 +508,7 @@ function createGauge(quota, series) {
     const color = healthColor(pct);
     const timeFormatted = formatSessionResetText(quota.resetTime, quota.absResetTime);
     const barWidth = Math.max(0, Math.min(100, pct));
-    const subLabel = label.includes('Session') ? '5-hour window' : (label.includes('Weekly') || label.includes('7day') ? '7-day window' : 'Shared Pool');
+    const subLabel = label.includes('Session') ? t('fiveHourWindow') : (label.includes('Weekly') || label.includes('7day') ? t('sevenDayWindow') : t('sharedPool'));
 
     return `
         <div class="session-card">
@@ -384,7 +520,7 @@ function createGauge(quota, series) {
                 <div class="session-bar-fill" style="width:${barWidth}%;background:linear-gradient(90deg,${color}CC,${color});box-shadow:0 0 8px ${color}55;"></div>
             </div>
             <div class="session-footer">
-                <span class="session-left"><strong style="color:${color};font-size:11.5px;">${pct}%</strong> left</span>
+                <span class="session-left"><strong style="color:${color};font-size:11.5px;">${pct}%</strong> ${escapeHtml(t('left'))}</span>
                 <span class="session-reset">${escapeHtml(timeFormatted)}</span>
             </div>
             ${sparklineSvg(series, color)}
@@ -408,42 +544,51 @@ function shortLabel(label) {
 }
 
 function renderSettingsData(settings) {
+    if (settings && settings.language) {
+        currentLang = settings.language;
+        updateStaticHeaderI18n();
+    }
+
     const fields = [
-        { key: 'claude.usagePeriod', label: 'Usage Period', type: 'select', options: [
-            { value: '5-hour', label: '5 Hour' },
-            { value: '7-day', label: '7 Day' },
-            { value: 'both', label: 'Both' }
+        { key: 'language', label: t('langLabel'), type: 'select', options: [
+            { value: 'vi', label: 'Tiếng Việt (Vietnamese)' },
+            { value: 'en', label: 'English' }
         ]},
-        { key: 'refreshInterval', label: 'Refresh Interval (min)', type: 'select', options: [
+        { key: 'claude.usagePeriod', label: t('usagePeriodLabel'), type: 'select', options: [
+            { value: '5-hour', label: t('usage5h') },
+            { value: '7-day', label: t('usage7d') },
+            { value: 'both', label: t('usageBoth') }
+        ]},
+        { key: 'refreshInterval', label: t('refreshIntervalLabel'), type: 'select', options: [
             { value: 1, label: '1' }, { value: 2, label: '2' }, { value: 5, label: '5' },
             { value: 10, label: '10' }, { value: 15, label: '15' }, { value: 30, label: '30' }
         ]},
-        { key: 'enableNotifications', label: 'Notifications', type: 'toggle' },
-        { key: 'notifyThreshold', label: 'Notify Threshold (%)', type: 'select', options: [
+        { key: 'enableNotifications', label: t('notificationsLabel'), type: 'toggle' },
+        { key: 'notifyThreshold', label: t('notifyThresholdLabel'), type: 'select', options: [
             { value: 5, label: '5' }, { value: 10, label: '10' }, { value: 15, label: '15' },
             { value: 20, label: '20' }, { value: 30, label: '30' }, { value: 40, label: '40' },
             { value: 50, label: '50' }
         ]},
-        { key: 'statusBar.mode', label: 'Status Bar', type: 'select', options: [
-            { value: 'full', label: 'Full' },
-            { value: 'compact', label: 'Compact' },
-            { value: 'dot', label: 'Dot only' }
+        { key: 'statusBar.mode', label: t('statusBarLabel'), type: 'select', options: [
+            { value: 'full', label: t('sbFull') },
+            { value: 'compact', label: t('sbCompact') },
+            { value: 'dot', label: t('sbDot') }
         ]},
     ];
 
     const panel = document.getElementById('settings-panel');
-    let html = '<div class="section-title">Settings</div>';
+    let html = `<div class="section-title">${escapeHtml(t('settingsHeader'))}</div>`;
 
     fields.forEach(f => {
         const val = settings[f.key] ?? '';
         html += '<div class="settings-row">';
-        html += `<label class="settings-label">${f.label}</label>`;
+        html += `<label class="settings-label">${escapeHtml(f.label)}</label>`;
 
         if (f.type === 'select') {
             html += `<select class="settings-select" data-key="${f.key}">`;
             f.options.forEach(opt => {
                 const sel = String(val) === String(opt.value) ? 'selected' : '';
-                html += `<option value="${opt.value}" ${sel}>${opt.label}</option>`;
+                html += `<option value="${opt.value}" ${sel}>${escapeHtml(opt.label)}</option>`;
             });
             html += '</select>';
         } else if (f.type === 'toggle') {
@@ -453,10 +598,22 @@ function renderSettingsData(settings) {
         html += '</div>';
     });
 
-    html += '<button class="settings-save" id="save-settings-btn">Save</button>';
+    html += `<button class="settings-save" id="save-settings-btn">${escapeHtml(t('saveBtn'))}</button>`;
     panel.innerHTML = html;
 
+    // Immediate language switcher handler inside select
+    const langSelect = panel.querySelector('select[data-key="language"]');
+    if (langSelect) {
+        langSelect.addEventListener('change', (e) => {
+            currentLang = e.target.value;
+            updateStaticHeaderI18n();
+            if (cachedDashboardData) renderDashboard(cachedDashboardData);
+            renderSettingsData({ ...settings, language: currentLang });
+        });
+    }
+
     document.getElementById('save-settings-btn').addEventListener('click', () => {
+        const btn = document.getElementById('save-settings-btn');
         const result = {};
         panel.querySelectorAll('[data-key]').forEach(el => {
             if (el.tagName === 'BUTTON') return;
@@ -465,10 +622,29 @@ function renderSettingsData(settings) {
                 result[key] = el.checked;
             } else {
                 let v = el.value.trim();
-                if (key === 'refreshInterval' || key === 'notifyThreshold') v = parseInt(v);
+                if (key === 'refreshInterval' || key === 'notifyThreshold') v = parseInt(v, 10);
                 result[key] = v;
             }
         });
+
+        if (btn) {
+            btn.textContent = t('savingBtn');
+            btn.disabled = true;
+        }
+
         vscode.postMessage({ type: 'saveSettings', settings: result });
+
+        setTimeout(() => {
+            if (btn) {
+                btn.textContent = t('savedBtn');
+                setTimeout(() => {
+                    if (btn) {
+                        btn.textContent = t('saveBtn');
+                        btn.disabled = false;
+                    }
+                }, 1200);
+            }
+        }, 300);
     });
 }
+

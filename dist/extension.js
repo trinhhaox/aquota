@@ -825,6 +825,7 @@ var SidebarProvider = class _SidebarProvider {
       this.syncToWebview(_SidebarProvider._latestData);
     }
     this.updateData();
+    this._sendSettings();
     webviewView.webview.onDidReceiveMessage(async (data) => {
       if (data.type === "onRefresh") {
         this.updateData();
@@ -853,8 +854,9 @@ var SidebarProvider = class _SidebarProvider {
     this._view?.webview.postMessage({
       type: "settings",
       settings: {
+        "language": sqm.get("language") || "vi",
         "claude.usagePeriod": sqm.get("claude.usagePeriod") || "both",
-        "refreshInterval": sqm.get("refreshInterval") || 5,
+        "refreshInterval": sqm.get("refreshInterval") ?? 5,
         "enableNotifications": sqm.get("enableNotifications") !== false,
         "notifyThreshold": sqm.get("notifyThreshold") ?? 20,
         "statusBar.mode": sqm.get("statusBar.mode") || "full"
@@ -863,13 +865,21 @@ var SidebarProvider = class _SidebarProvider {
   }
   async _saveSettings(settings) {
     const sqm = vscode2.workspace.getConfiguration("sqm");
-    const target = vscode2.ConfigurationTarget.Global;
     for (const [key, value] of Object.entries(settings)) {
-      await sqm.update(key, value, target);
+      const inspection = sqm.inspect(key);
+      if (inspection?.workspaceFolderValue !== void 0) {
+        await sqm.update(key, value, vscode2.ConfigurationTarget.WorkspaceFolder);
+      }
+      if (inspection?.workspaceValue !== void 0) {
+        await sqm.update(key, value, vscode2.ConfigurationTarget.Workspace);
+      }
+      await sqm.update(key, value, vscode2.ConfigurationTarget.Global);
     }
     await this._sendSettings();
     this.updateData();
-    vscode2.window.showInformationMessage("Settings saved!");
+    const lang = sqm.get("language") || "vi";
+    const msg = lang === "vi" ? "Aquota: \u0110\xE3 l\u01B0u c\xE0i \u0111\u1EB7t!" : "Aquota: Settings saved!";
+    vscode2.window.showInformationMessage(msg);
   }
   _getHtmlForWebview(webview) {
     const styleUri = webview.asWebviewUri(vscode2.Uri.joinPath(this._extensionUri, "webview-ui", "style.css"));
@@ -917,7 +927,7 @@ var SidebarProvider = class _SidebarProvider {
 var vscode3 = __toESM(require("vscode"));
 var https2 = __toESM(require("https"));
 var REPO_OWNER = "trinhhaox";
-var REPO_NAME = "Auto-Quota-Antigravity";
+var REPO_NAME = "aquota";
 var API_URL = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`;
 async function checkForUpdates(context) {
   try {
@@ -925,7 +935,7 @@ async function checkForUpdates(context) {
     if (!currentVersion) return;
     const options = {
       headers: {
-        "User-Agent": "VSCode-Auto-Quota-Antigravity-Extension"
+        "User-Agent": "VSCode-Aquota-Extension"
       }
     };
     https2.get(API_URL, options, (res) => {
@@ -968,7 +978,7 @@ function isNewerVersion(current, latest) {
 }
 async function showUpdateNotification(newVersion, url) {
   const action = "T\u1EA3i V\u1EC1 Ngay";
-  const message = `M\u1ED9t phi\xEAn b\u1EA3n m\u1EDBi c\u1EE7a Auto Quota Antigravity (v${newVersion}) \u0111\xE3 s\u1EB5n s\xE0ng!`;
+  const message = `M\u1ED9t phi\xEAn b\u1EA3n m\u1EDBi c\u1EE7a Aquota (v${newVersion}) \u0111\xE3 s\u1EB5n s\xE0ng!`;
   const result = await vscode3.window.showInformationMessage(message, action);
   if (result === action) {
     vscode3.env.openExternal(vscode3.Uri.parse(url));
@@ -1212,12 +1222,14 @@ function activate(context) {
   );
   context.subscriptions.push(
     vscode5.commands.registerCommand("sqm.menu", async () => {
+      const lang = vscode5.workspace.getConfiguration("sqm").get("language") || "vi";
+      const isVi = lang === "vi";
       const items = [
-        { id: "refresh", label: "$(refresh) Refresh quotas now" },
-        { id: "dashboard", label: "$(dashboard) Open Aquota Dashboard" },
-        { id: "settings", label: "$(gear) Extension settings" }
+        { id: "refresh", label: isVi ? "$(refresh) L\xE0m m\u1EDBi quota ngay" : "$(refresh) Refresh quotas now" },
+        { id: "dashboard", label: isVi ? "$(dashboard) M\u1EDF B\u1EA3ng \u0111i\u1EC1u khi\u1EC3n Aquota" : "$(dashboard) Open Aquota Dashboard" },
+        { id: "settings", label: isVi ? "$(gear) C\xE0i \u0111\u1EB7t ti\u1EC7n \xEDch" : "$(gear) Extension settings" }
       ];
-      const pick = await vscode5.window.showQuickPick(items, { placeHolder: "Aquota Quick Menu" });
+      const pick = await vscode5.window.showQuickPick(items, { placeHolder: isVi ? "Menu nhanh Aquota" : "Aquota Quick Menu" });
       switch (pick?.id) {
         case "refresh":
           triggerRefresh();
@@ -1237,7 +1249,7 @@ function activate(context) {
     if (e.affectsConfiguration("sqm.refreshInterval")) {
       startAutoRefresh();
     }
-    if (e.affectsConfiguration("sqm.statusBar.mode") || e.affectsConfiguration("sqm.statusBar.usagePeriod")) {
+    if (e.affectsConfiguration("sqm.statusBar.mode") || e.affectsConfiguration("sqm.statusBar.usagePeriod") || e.affectsConfiguration("sqm.language")) {
       refreshStatusBar();
     }
   }));
@@ -1460,7 +1472,12 @@ function refreshStatusBar() {
   const name = latestQuotaData.antigravity?.name || "User";
   const tier = latestQuotaData.antigravity?.tier || "";
   const tierDisplay = tier ? ` (${tier})` : "";
-  tooltip.appendMarkdown(`&nbsp;&nbsp;\u26A1 **Aquota** \xB7 \u{1F464} **${name}**${tierDisplay} &nbsp;&nbsp;\xB7&nbsp;&nbsp; [\u{1F504} Refresh](command:sqm.refresh) &nbsp;|&nbsp; [\u{1F4CA} Dashboard](command:sqm.sidebar.focus) &nbsp;|&nbsp; [\u2699\uFE0F Settings](command:sqm.menu)`);
+  const lang = vscode5.workspace.getConfiguration("sqm").get("language") || "vi";
+  const isVi = lang === "vi";
+  const refreshText = isVi ? "\u{1F504} L\xE0m m\u1EDBi" : "\u{1F504} Refresh";
+  const dashboardText = isVi ? "\u{1F4CA} B\u1EA3ng \u0111i\u1EC1u khi\u1EC3n" : "\u{1F4CA} Dashboard";
+  const settingsText = isVi ? "\u2699\uFE0F C\xE0i \u0111\u1EB7t" : "\u2699\uFE0F Settings";
+  tooltip.appendMarkdown(`&nbsp;&nbsp;\u26A1 **Aquota** \xB7 \u{1F464} **${name}**${tierDisplay} &nbsp;&nbsp;\xB7&nbsp;&nbsp; [${refreshText}](command:sqm.refresh) &nbsp;|&nbsp; [${dashboardText}](command:sqm.sidebar.focus) &nbsp;|&nbsp; [${settingsText}](command:sqm.menu)`);
   statusBarItem.tooltip = tooltip;
 }
 function setLatestData(data) {
@@ -1497,6 +1514,8 @@ function checkNotifications(data) {
   const config = vscode5.workspace.getConfiguration("sqm");
   if (!config.get("enableNotifications")) return;
   const threshold = Math.max(1, Math.min(90, config.get("notifyThreshold") || 20));
+  const lang = config.get("language") || "vi";
+  const isVi = lang === "vi";
   const checkQuota = (serviceName, quotas) => {
     if (!quotas) return;
     quotas.forEach((q) => {
@@ -1508,9 +1527,10 @@ function checkNotifications(data) {
         return;
       }
       if (notifiedModels.has(modelKey)) return;
-      const message = `${serviceName} [${q.label}] quota is low (${pct}% remaining).`;
-      vscode5.window.showWarningMessage(message, "Dashboard").then((selection) => {
-        if (selection === "Dashboard") {
+      const message = isVi ? `H\u1EA1n m\u1EE9c ${serviceName} [${q.label}] s\u1EAFp h\u1EBFt (c\xF2n ${pct}%).` : `${serviceName} [${q.label}] quota is low (${pct}% remaining).`;
+      const dashboardBtn = isVi ? "B\u1EA3ng \u0111i\u1EC1u khi\u1EC3n" : "Dashboard";
+      vscode5.window.showWarningMessage(message, dashboardBtn).then((selection) => {
+        if (selection === dashboardBtn) {
           vscode5.commands.executeCommand("sqm.sidebar.focus");
         }
       });

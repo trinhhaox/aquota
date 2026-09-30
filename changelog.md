@@ -1,4 +1,11 @@
-# Changelog - AG Manager
+# Changelog - Aquota
+
+## [2.2.0] - 2026-10-01
+
+### Bilingual Support (Tiếng Việt & English) & Refresh Interval Fix
+- **Hỗ trợ chuyển đổi ngôn ngữ song ngữ:** Bổ sung tuỳ chọn ngôn ngữ Tiếng Việt (mặc định) và Tiếng Anh trong phần Cài đặt (`sqm.language`). Toàn bộ giao diện Webview, Menu tác vụ nhanh, Tooltip Status Bar và thông báo cảnh báo đều được Việt hoá/Anh hoá hoàn chỉnh.
+- **Sửa lỗi không lưu được Refresh Interval:** Khắc phục triệt để lỗi xung đột cấu hình Workspace đè lên Global Settings bằng cơ chế cập nhật đa tầng (`vscode.ConfigurationTarget.Workspace` & `Global`), đảm bảo chu kỳ làm mới áp dụng ngay lập tức.
+- **Phản hồi giao diện trực quan:** Bổ sung trạng thái lưu cài đặt (`Saving...` ➔ `Saved ✓`) trên nút Save và tối ưu hoá bộ đếm thời gian tự động làm mới.
 
 ## [2.1.2] - 2026-08-28
 

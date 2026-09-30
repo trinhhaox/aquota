@@ -33,6 +33,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         }
 
         this.updateData();
+        this._sendSettings();
 
         webviewView.webview.onDidReceiveMessage(async (data: WebviewMessage) => {
             if (data.type === "onRefresh") {
@@ -66,8 +67,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         this._view?.webview.postMessage({
             type: 'settings',
             settings: {
+                'language': sqm.get<string>('language') || 'vi',
                 'claude.usagePeriod': sqm.get<string>('claude.usagePeriod') || 'both',
-                'refreshInterval': sqm.get<number>('refreshInterval') || 5,
+                'refreshInterval': sqm.get<number>('refreshInterval') ?? 5,
                 'enableNotifications': sqm.get<boolean>('enableNotifications') !== false,
                 'notifyThreshold': sqm.get<number>('notifyThreshold') ?? 20,
                 'statusBar.mode': sqm.get<string>('statusBar.mode') || 'full',
@@ -77,15 +79,24 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     private async _saveSettings(settings: Record<string, unknown>) {
         const sqm = vscode.workspace.getConfiguration('sqm');
-        const target = vscode.ConfigurationTarget.Global;
 
         for (const [key, value] of Object.entries(settings)) {
-            await sqm.update(key, value, target);
+            const inspection = sqm.inspect(key);
+            // If the setting was overridden in workspace or workspaceFolder, update them so workspace doesn't shadow user selection
+            if (inspection?.workspaceFolderValue !== undefined) {
+                await sqm.update(key, value, vscode.ConfigurationTarget.WorkspaceFolder);
+            }
+            if (inspection?.workspaceValue !== undefined) {
+                await sqm.update(key, value, vscode.ConfigurationTarget.Workspace);
+            }
+            await sqm.update(key, value, vscode.ConfigurationTarget.Global);
         }
 
         await this._sendSettings();
         this.updateData();
-        vscode.window.showInformationMessage('Settings saved!');
+        const lang = sqm.get<string>('language') || 'vi';
+        const msg = lang === 'vi' ? 'Aquota: Đã lưu cài đặt!' : 'Aquota: Settings saved!';
+        vscode.window.showInformationMessage(msg);
     }
 
     private _getHtmlForWebview(webview: vscode.Webview) {
