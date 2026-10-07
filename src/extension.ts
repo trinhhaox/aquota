@@ -138,6 +138,8 @@ function escapeXml(s: string): string {
 }
 
 function formatCleanModelName(label: string): string {
+    if (label === 'Gemini' || label === 'Gemini Models') return 'Gemini';
+    if (label === 'Claude & GPT' || label === 'Claude & GPT Models') return 'Claude & GPT';
     return label
         .replace(/^Gemini\s+/i, '')
         .replace(/^Claude\/GPT\s+/i, '')
@@ -185,7 +187,7 @@ function groupSharedPools(quotas: QuotaInfo[]): QuotaInfo[] {
                 map.get(key)!.models.push(clean);
             } else {
                 map.set(key, {
-                    label: groupType === 'gemini' ? 'Gemini Models' : 'Claude & GPT Models',
+                    label: groupType === 'gemini' ? 'Gemini' : 'Claude & GPT',
                     models: [clean],
                     q
                 });
@@ -197,7 +199,10 @@ function groupSharedPools(quotas: QuotaInfo[]): QuotaInfo[] {
 
     for (const entry of map.values()) {
         if (entry.models.length > 1) {
-            const subSummary = entry.models.map(m => m.replace(/Flash|Pro|Sonnet|Opus/i, '').trim()).filter(Boolean).join(', ');
+            const subSummary = entry.models
+                .map(m => m.replace(/Claude\s*/i, '').replace(/Flash|Pro|Sonnet|Opus/i, '').trim())
+                .filter(Boolean)
+                .join(', ');
             result.push({
                 ...entry.q,
                 label: entry.label,
@@ -214,7 +219,7 @@ function groupSharedPools(quotas: QuotaInfo[]): QuotaInfo[] {
 function buildTooltipSVG(data: DashboardData): string {
     const groupHeaderHeight = 20;
     const padding = 12;
-    const width = 340;
+    const width = 360;
 
     let contentHtml = '';
     let currentY = padding + 18;
@@ -258,39 +263,52 @@ function buildTooltipSVG(data: DashboardData): string {
             if (!isPercent) {
                 // Informational row (e.g. Active Model)
                 const infoHeight = 24;
-                contentHtml += `<rect x="${padding}" y="${currentY}" width="${width - padding * 2}" height="${infoHeight - 4}" rx="4" fill="#FFFFFF" fill-opacity="0.03"/>`;
-                contentHtml += `<text x="${padding + 8}" y="${currentY + 14}" font-family="system-ui, -apple-system, sans-serif" font-size="9.5" font-weight="600" fill="#CBD5E1">${escapeXml(cleanName)}</text>`;
-                contentHtml += `<text x="${width - padding - 8}" y="${currentY + 14}" text-anchor="end" font-family="ui-monospace, SFMono-Regular, monospace" font-size="9.5" font-weight="bold" fill="#69F0AE">${escapeXml(q.displayValue || '')}</text>`;
+                contentHtml += `<rect x="${padding}" y="${currentY}" width="${width - padding * 2}" height="${infoHeight - 4}" rx="5" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-opacity="0.04" stroke-width="0.8"/>`;
+                contentHtml += `<text x="${padding + 8}" y="${currentY + 13.5}" font-family="system-ui, -apple-system, sans-serif" font-size="9" font-weight="600" fill="#94A3B8">${escapeXml(cleanName)}</text>`;
+                contentHtml += `<text x="${width - padding - 8}" y="${currentY + 13.5}" text-anchor="end" font-family="ui-monospace, SFMono-Regular, monospace" font-size="9.5" font-weight="700" fill="#69F0AE">${escapeXml(q.displayValue || '')}</text>`;
                 currentY += infoHeight;
             } else {
-                // Compact Modern Card
-                const cardHeight = 36;
+                // Modern 3-tier card: Row 1 = Name + %, Row 2 = Progress Bar, Row 3 = SubLabel + Reset
+                const cardHeight = 42;
                 const cardWidth = width - padding * 2;
                 const trackWidth = cardWidth - 16;
                 const fillWidth = Math.max(2.5, (pct / 100) * trackWidth);
-                
+
+                let displayName = cleanName;
                 let subLabel = q.style && q.style !== 'fluid' ? q.style : '';
-                if (!subLabel) {
-                    const isSession = cleanName.includes('Session') || cleanName.includes('5hr') || cleanName.includes('5-Hour');
-                    const isWeekly = cleanName.includes('Weekly') || cleanName.includes('7day') || cleanName.includes('7-Day');
-                    subLabel = isSession ? '5h window' : (isWeekly ? '7d window' : 'Shared Pool');
+
+                if (displayName.includes('Session')) {
+                    displayName = 'Session';
+                    if (!subLabel) subLabel = '5h window';
+                } else if (displayName.includes('Weekly')) {
+                    displayName = 'Weekly';
+                    if (!subLabel) subLabel = '7d window';
                 }
 
                 // Card background
                 contentHtml += `<rect x="${padding}" y="${currentY}" width="${cardWidth}" height="${cardHeight - 4}" rx="6" fill="#FFFFFF" fill-opacity="0.025" stroke="#FFFFFF" stroke-opacity="0.05" stroke-width="0.8"/>`;
 
-                // Top: Model / Session Label & Subtitle
-                contentHtml += `<circle cx="${padding + 8}" cy="${currentY + 11}" r="2.5" fill="${color.hex}"/>`;
-                contentHtml += `<text x="${padding + 15}" y="${currentY + 14}" font-family="system-ui, -apple-system, sans-serif" font-size="9.5" font-weight="700" fill="#F1F5F9">${escapeXml(cleanName)} <tspan font-size="8" font-weight="500" fill="#64748B">${escapeXml(subLabel)}</tspan></text>`;
+                // Row 1 (Top): Status Dot + Title (Left) | Percentage (Right)
+                contentHtml += `<circle cx="${padding + 8}" cy="${currentY + 10.5}" r="2.5" fill="${color.hex}"/>`;
+                contentHtml += `<text x="${padding + 16}" y="${currentY + 13.5}" font-family="system-ui, -apple-system, sans-serif" font-size="9.5" font-weight="700" fill="#F1F5F9">${escapeXml(displayName)}</text>`;
+                contentHtml += `<text x="${width - padding - 8}" y="${currentY + 13.5}" text-anchor="end" font-family="system-ui, -apple-system, sans-serif" font-size="10" font-weight="800" fill="${color.hex}">${pct}%</text>`;
 
-                // Top Right: Percent & Reset
-                const resetPart = sessionReset ? ` <tspan font-size="8" font-weight="500" fill="#94A3B8">· ${escapeXml(sessionReset)}</tspan>` : '';
-                contentHtml += `<text x="${width - padding - 8}" y="${currentY + 14}" text-anchor="end" font-family="system-ui, -apple-system, sans-serif" font-size="9.5" font-weight="800" fill="${color.hex}">${pct}%${resetPart}</text>`;
-
-                // Bottom: Progress Bar
-                const barY = currentY + 21;
+                // Row 2 (Middle): Progress Bar
+                const barY = currentY + 19.5;
                 contentHtml += `<rect x="${padding + 8}" y="${barY}" width="${trackWidth}" height="3.5" rx="1.75" fill="#FFFFFF" fill-opacity="0.08"/>`;
                 contentHtml += `<rect x="${padding + 8}" y="${barY}" width="${fillWidth}" height="3.5" rx="1.75" fill="${color.hex}" fill-opacity="0.95"/>`;
+
+                // Row 3 (Bottom): SubLabel / Models (Left) | Reset Info (Right)
+                const footerY = currentY + 31.5;
+                if (subLabel) {
+                    const maxSubLen = 26;
+                    const displaySub = subLabel.length > maxSubLen ? subLabel.slice(0, maxSubLen - 1) + '…' : subLabel;
+                    contentHtml += `<text x="${padding + 8}" y="${footerY}" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="500" fill="#64748B">${escapeXml(displaySub)}</text>`;
+                }
+
+                if (sessionReset) {
+                    contentHtml += `<text x="${width - padding - 8}" y="${footerY}" text-anchor="end" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="500" fill="#94A3B8">${escapeXml(sessionReset)}</text>`;
+                }
 
                 currentY += cardHeight;
             }

@@ -1,5 +1,12 @@
 # Changelog - Aquota
 
+## [2.2.2] - 2026-10-07
+
+### Fix Text Overlap in Tooltip SVG & Multi-Tier Card Layout
+- **Khắc phục triệt để lỗi chữ bị chồng đè trong Tooltip Status Bar:** Tái cấu trúc layout card trong popup hover thành cấu trúc 3 tầng rõ ràng (Hàng 1: Tên dịch vụ & Phần trăm %; Hàng 2: Thanh tiến trình; Hàng 3: Danh sách model con/chú thích & Thời gian hồi phục). Loại bỏ hoàn toàn tình trạng các chuỗi ký tự dài bị đâm xuyên vào nhau.
+- **Chuẩn hoá tên nhóm và nhãn hiển thị:** Sửa lỗi cắt cụt tên `Gemini Models` thành `Models`, đổi thành `Gemini`; chuẩn hóa `Claude & GPT Models` thành `Claude & GPT`; loại bỏ lặp từ ở các thẻ hạn mức của Claude Code và Codex.
+- **Tối ưu không gian hiển thị:** Tăng chiều rộng SVG từ 340px lên 360px cho tỷ lệ hài hòa, thoáng đãng và sang trọng chuẩn Dark Glassmorphism.
+
 ## [2.2.1] - 2026-10-01
 
 ### Compact Status Bar Hover & OpenAI Codex Rate Limit Fix
