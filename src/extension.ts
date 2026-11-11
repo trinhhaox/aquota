@@ -141,7 +141,6 @@ function formatCleanModelName(label: string): string {
     if (label === 'Gemini' || label === 'Gemini Models') return 'Gemini';
     if (label === 'Claude & GPT' || label === 'Claude & GPT Models') return 'Claude & GPT';
     return label
-        .replace(/^Gemini\s+/i, '')
         .replace(/^Claude\/GPT\s+/i, '')
         .replace(/\s*\(Thinking\)/i, '')
         .replace(/\s*\(Medium\)/i, '')
@@ -199,14 +198,15 @@ function groupSharedPools(quotas: QuotaInfo[]): QuotaInfo[] {
 
     for (const entry of map.values()) {
         if (entry.models.length > 1) {
+            // Keep the model family (Opus/Sonnet/Flash) — the version alone ("5.5, 5.5") is ambiguous.
             const subSummary = entry.models
-                .map(m => m.replace(/Claude\s*/i, '').replace(/Flash|Pro|Sonnet|Opus/i, '').trim())
+                .map(m => m.replace(/^(Claude|Gemini)\s+/i, '').trim())
                 .filter(Boolean)
                 .join(', ');
             result.push({
                 ...entry.q,
                 label: entry.label,
-                style: subSummary ? `(${subSummary})` : 'Shared Pool'
+                style: subSummary || 'Shared Pool'
             });
         } else {
             result.push(entry.q);
@@ -265,7 +265,7 @@ function buildTooltipSVG(data: DashboardData): string {
                 const infoHeight = 24;
                 contentHtml += `<rect x="${padding}" y="${currentY}" width="${width - padding * 2}" height="${infoHeight - 4}" rx="5" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-opacity="0.04" stroke-width="0.8"/>`;
                 contentHtml += `<text x="${padding + 8}" y="${currentY + 13.5}" font-family="system-ui, -apple-system, sans-serif" font-size="9" font-weight="600" fill="#94A3B8">${escapeXml(cleanName)}</text>`;
-                contentHtml += `<text x="${width - padding - 8}" y="${currentY + 13.5}" text-anchor="end" font-family="ui-monospace, SFMono-Regular, monospace" font-size="9.5" font-weight="700" fill="#69F0AE">${escapeXml(q.displayValue || '')}</text>`;
+                contentHtml += `<text x="${width - padding - 8}" y="${currentY + 13.5}" text-anchor="end" font-family="ui-monospace, SFMono-Regular, monospace" font-size="9.5" font-weight="700" fill="${q.displayValue === 'Unavailable' ? '#64748B' : '#69F0AE'}">${escapeXml(q.displayValue || '')}</text>`;
                 currentY += infoHeight;
             } else {
                 // Modern 3-tier card: Row 1 = Name + %, Row 2 = Progress Bar, Row 3 = SubLabel + Reset
@@ -282,6 +282,10 @@ function buildTooltipSVG(data: DashboardData): string {
                     if (!subLabel) subLabel = '5h window';
                 } else if (displayName.includes('Weekly')) {
                     displayName = 'Weekly';
+                    if (!subLabel) subLabel = '7d window';
+                } else if (displayName.endsWith('(7day)')) {
+                    // Per-model weekly limit from Claude Code, e.g. "Opus (7day)"
+                    displayName = displayName.replace(/\s*\(7day\)$/, '');
                     if (!subLabel) subLabel = '7d window';
                 }
 
@@ -301,7 +305,7 @@ function buildTooltipSVG(data: DashboardData): string {
                 // Row 3 (Bottom): SubLabel / Models (Left) | Reset Info (Right)
                 const footerY = currentY + 31.5;
                 if (subLabel) {
-                    const maxSubLen = 26;
+                    const maxSubLen = 38;
                     const displaySub = subLabel.length > maxSubLen ? subLabel.slice(0, maxSubLen - 1) + '…' : subLabel;
                     contentHtml += `<text x="${padding + 8}" y="${footerY}" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="500" fill="#64748B">${escapeXml(displaySub)}</text>`;
                 }

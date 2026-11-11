@@ -1,5 +1,12 @@
 # Changelog - Aquota
 
+## [2.2.3] - 2026-11-11
+
+### Cập nhật thống kê model theo quota thật (Antigravity & Claude Code)
+- **Model không khả dụng không còn hiện 0%:** Model không có dữ liệu quota (vd. `Gemini 4 Carbon` gắn nhãn `Unavailable`) hiển thị dòng xám "Unavailable" thay vì 0% — không còn kéo badge sang LOW QUOTA hay làm thanh trạng thái báo Gemini 0%. Model hết quota thật vẫn hiện 0%.
+- **Tên model đầy đủ:** Giữ tiền tố `Gemini` (vd. `Gemini 4 Argon` thay vì `4 Argon`); nhóm dùng chung hiện `Opus 5.5, Sonnet 5.5, GPT-OSS 120B` thay vì `5.5, 5.5, GPT-OSS 120B`.
+- **Hạn mức tuần theo từng model của Claude Code:** Tự nhận mọi trường `seven_day_*` (Opus, Sonnet, model mới…) từ API thay vì viết cứng; hiện ở cả tooltip và sidebar khi gói có hạn mức riêng.
+
 ## [2.2.2] - 2026-10-07
 
 ### Fix Text Overlap in Tooltip SVG & Multi-Tier Card Layout

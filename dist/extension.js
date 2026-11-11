@@ -194,6 +194,18 @@ async function execWithTimeout(command, timeoutMs = 8e3) {
   });
 }
 var API_PATH = "/exa.language_server_pb.LanguageServerService/GetUserStatus";
+var CLAUDE_NON_MODEL_WINDOWS = /* @__PURE__ */ new Set(["oauth_apps", "cowork"]);
+function extractClaudeModelWindows(usageData) {
+  if (!usageData || typeof usageData !== "object") return [];
+  return Object.keys(usageData).flatMap((key) => {
+    const suffix = key.match(/^seven_day_(.+)$/)?.[1];
+    const data = usageData[key];
+    if (!suffix || CLAUDE_NON_MODEL_WINDOWS.has(suffix)) return [];
+    if (!data || typeof data !== "object" || data.utilization === void 0 || data.utilization === null) return [];
+    const name = suffix.split("_").map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
+    return [{ name, data }];
+  });
+}
 var QuotaService = class {
   serverInfo = null;
   discovering = null;
@@ -314,8 +326,6 @@ var QuotaService = class {
     const quotas = [];
     const five = usageData?.five_hour;
     const seven = usageData?.seven_day;
-    const sevenSonnet = usageData?.seven_day_sonnet;
-    const sevenOpus = usageData?.seven_day_opus;
     const parseResetTime = (resetsAt) => {
       if (!resetsAt) return { resetLabel: "", absLabel: "" };
       try {
@@ -351,8 +361,9 @@ var QuotaService = class {
     }
     if (usagePeriod === "7-day" || usagePeriod === "both") {
       pushQuota(seven, "Weekly (7day)", "#FF7043", "7d");
-      pushQuota(sevenSonnet, "Sonnet (7day)", "#FFA726", "7d");
-      pushQuota(sevenOpus, "Opus (7day)", "#AB47BC", "7d");
+      for (const w of extractClaudeModelWindows(usageData)) {
+        pushQuota(w.data, `${w.name} (7day)`, "#AB47BC", "7d");
+      }
     }
     return quotas;
   }
@@ -399,6 +410,17 @@ var QuotaService = class {
           label: "Weekly Limit Remaining",
           remaining,
           description: remaining === 0 ? `You have hit your weekly limit, it refreshes in ${duration}.` : `You have used some of your weekly limit, it will fully refresh in ${duration}.`,
+          resetTimeText: duration
+        });
+      }
+      for (const w of extractClaudeModelWindows(usageData)) {
+        const used = Math.max(0, Math.min(100, Number(w.data.utilization || 0)));
+        const remaining = Math.round(100 - used);
+        const duration = parseDuration(w.data.resets_at) || "7 days";
+        items.push({
+          label: `${w.name} Weekly Limit Remaining`,
+          remaining,
+          description: remaining === 0 ? `You have hit your weekly ${w.name} limit, it refreshes in ${duration}.` : `You have used some of your weekly ${w.name} limit, it will fully refresh in ${duration}.`,
           resetTimeText: duration
         });
       }
@@ -557,6 +579,14 @@ var QuotaService = class {
     const user = resp.userStatus;
     const modelConfigs = user?.cascadeModelConfigData?.clientModelConfigs || [];
     const rawQuotas = modelConfigs.filter((m) => m.quotaInfo).map((m) => {
+      if (m.quotaInfo.remainingFraction === void 0 && !m.quotaInfo.resetTime) {
+        return {
+          label: m.label,
+          remaining: 100,
+          resetTime: "",
+          displayValue: m.tagTitle || "Unavailable"
+        };
+      }
       const resetTimeStr = m.quotaInfo.resetTime;
       let resetLabel = "Ready";
       let absResetLabel = "";
@@ -1253,7 +1283,7 @@ function escapeXml(s) {
 function formatCleanModelName(label) {
   if (label === "Gemini" || label === "Gemini Models") return "Gemini";
   if (label === "Claude & GPT" || label === "Claude & GPT Models") return "Claude & GPT";
-  return label.replace(/^Gemini\s+/i, "").replace(/^Claude\/GPT\s+/i, "").replace(/\s*\(Thinking\)/i, "").replace(/\s*\(Medium\)/i, "").replace(/\s*\(High\)/i, "").replace(/\s*\(Low\)/i, "").trim();
+  return label.replace(/^Claude\/GPT\s+/i, "").replace(/\s*\(Thinking\)/i, "").replace(/\s*\(Medium\)/i, "").replace(/\s*\(High\)/i, "").replace(/\s*\(Low\)/i, "").trim();
 }
 function groupSharedPools(quotas) {
   const map = /* @__PURE__ */ new Map();
@@ -1282,11 +1312,11 @@ function groupSharedPools(quotas) {
   }
   for (const entry of map.values()) {
     if (entry.models.length > 1) {
-      const subSummary = entry.models.map((m) => m.replace(/Claude\s*/i, "").replace(/Flash|Pro|Sonnet|Opus/i, "").trim()).filter(Boolean).join(", ");
+      const subSummary = entry.models.map((m) => m.replace(/^(Claude|Gemini)\s+/i, "").trim()).filter(Boolean).join(", ");
       result.push({
         ...entry.q,
         label: entry.label,
-        style: subSummary ? `(${subSummary})` : "Shared Pool"
+        style: subSummary || "Shared Pool"
       });
     } else {
       result.push(entry.q);
@@ -1332,7 +1362,7 @@ function buildTooltipSVG(data) {
         const infoHeight = 24;
         contentHtml += `<rect x="${padding}" y="${currentY}" width="${width - padding * 2}" height="${infoHeight - 4}" rx="5" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-opacity="0.04" stroke-width="0.8"/>`;
         contentHtml += `<text x="${padding + 8}" y="${currentY + 13.5}" font-family="system-ui, -apple-system, sans-serif" font-size="9" font-weight="600" fill="#94A3B8">${escapeXml(cleanName)}</text>`;
-        contentHtml += `<text x="${width - padding - 8}" y="${currentY + 13.5}" text-anchor="end" font-family="ui-monospace, SFMono-Regular, monospace" font-size="9.5" font-weight="700" fill="#69F0AE">${escapeXml(q.displayValue || "")}</text>`;
+        contentHtml += `<text x="${width - padding - 8}" y="${currentY + 13.5}" text-anchor="end" font-family="ui-monospace, SFMono-Regular, monospace" font-size="9.5" font-weight="700" fill="${q.displayValue === "Unavailable" ? "#64748B" : "#69F0AE"}">${escapeXml(q.displayValue || "")}</text>`;
         currentY += infoHeight;
       } else {
         const cardHeight = 42;
@@ -1347,6 +1377,9 @@ function buildTooltipSVG(data) {
         } else if (displayName.includes("Weekly")) {
           displayName = "Weekly";
           if (!subLabel) subLabel = "7d window";
+        } else if (displayName.endsWith("(7day)")) {
+          displayName = displayName.replace(/\s*\(7day\)$/, "");
+          if (!subLabel) subLabel = "7d window";
         }
         contentHtml += `<rect x="${padding}" y="${currentY}" width="${cardWidth}" height="${cardHeight - 4}" rx="6" fill="#FFFFFF" fill-opacity="0.025" stroke="#FFFFFF" stroke-opacity="0.05" stroke-width="0.8"/>`;
         contentHtml += `<circle cx="${padding + 8}" cy="${currentY + 10.5}" r="2.5" fill="${color.hex}"/>`;
@@ -1357,7 +1390,7 @@ function buildTooltipSVG(data) {
         contentHtml += `<rect x="${padding + 8}" y="${barY}" width="${fillWidth}" height="3.5" rx="1.75" fill="${color.hex}" fill-opacity="0.95"/>`;
         const footerY = currentY + 31.5;
         if (subLabel) {
-          const maxSubLen = 26;
+          const maxSubLen = 38;
           const displaySub = subLabel.length > maxSubLen ? subLabel.slice(0, maxSubLen - 1) + "\u2026" : subLabel;
           contentHtml += `<text x="${padding + 8}" y="${footerY}" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="500" fill="#64748B">${escapeXml(displaySub)}</text>`;
         }

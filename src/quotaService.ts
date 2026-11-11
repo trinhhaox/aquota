@@ -36,6 +36,24 @@ async function execWithTimeout(command: string, timeoutMs: number = 8000): Promi
 
 const API_PATH = '/exa.language_server_pb.LanguageServerService/GetUserStatus';
 
+// seven_day_* keys in /api/oauth/usage that are not per-model limits.
+const CLAUDE_NON_MODEL_WINDOWS = new Set(['oauth_apps', 'cowork']);
+
+// Per-model weekly windows (seven_day_opus, seven_day_sonnet, …) discovered from the
+// response instead of hardcoded, so newly added model limits show up automatically.
+// Null entries mean the plan has no separate limit for that model.
+function extractClaudeModelWindows(usageData: any): { name: string; data: any }[] {
+    if (!usageData || typeof usageData !== 'object') return [];
+    return Object.keys(usageData).flatMap(key => {
+        const suffix = key.match(/^seven_day_(.+)$/)?.[1];
+        const data = usageData[key];
+        if (!suffix || CLAUDE_NON_MODEL_WINDOWS.has(suffix)) return [];
+        if (!data || typeof data !== 'object' || data.utilization === undefined || data.utilization === null) return [];
+        const name = suffix.split('_').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+        return [{ name, data }];
+    });
+}
+
 export class QuotaService {
     private serverInfo: { port: number, token: string } | null = null;
     private discovering: Promise<boolean> | null = null;
@@ -166,8 +184,6 @@ export class QuotaService {
         const quotas: QuotaInfo[] = [];
         const five = usageData?.five_hour;
         const seven = usageData?.seven_day;
-        const sevenSonnet = usageData?.seven_day_sonnet;
-        const sevenOpus = usageData?.seven_day_opus;
 
         const parseResetTime = (resetsAt: string | undefined): { resetLabel: string; absLabel: string } => {
             if (!resetsAt) return { resetLabel: '', absLabel: '' };
@@ -208,8 +224,9 @@ export class QuotaService {
         }
         if (usagePeriod === '7-day' || usagePeriod === 'both') {
             pushQuota(seven, 'Weekly (7day)', '#FF7043', '7d');
-            pushQuota(sevenSonnet, 'Sonnet (7day)', '#FFA726', '7d');
-            pushQuota(sevenOpus, 'Opus (7day)', '#AB47BC', '7d');
+            for (const w of extractClaudeModelWindows(usageData)) {
+                pushQuota(w.data, `${w.name} (7day)`, '#AB47BC', '7d');
+            }
         }
 
         return quotas;
@@ -265,6 +282,19 @@ export class QuotaService {
                     description: remaining === 0
                         ? `You have hit your weekly limit, it refreshes in ${duration}.`
                         : `You have used some of your weekly limit, it will fully refresh in ${duration}.`,
+                    resetTimeText: duration
+                });
+            }
+            for (const w of extractClaudeModelWindows(usageData)) {
+                const used = Math.max(0, Math.min(100, Number(w.data.utilization || 0)));
+                const remaining = Math.round(100 - used);
+                const duration = parseDuration(w.data.resets_at) || '7 days';
+                items.push({
+                    label: `${w.name} Weekly Limit Remaining`,
+                    remaining,
+                    description: remaining === 0
+                        ? `You have hit your weekly ${w.name} limit, it refreshes in ${duration}.`
+                        : `You have used some of your weekly ${w.name} limit, it will fully refresh in ${duration}.`,
                     resetTimeText: duration
                 });
             }
@@ -427,6 +457,17 @@ export class QuotaService {
         const rawQuotas: QuotaInfo[] = modelConfigs
             .filter((m: any) => m.quotaInfo)
             .map((m: any) => {
+                // Protobuf JSON drops zero values: an exhausted model keeps resetTime but
+                // omits remainingFraction. A model with neither (e.g. tagTitle "Unavailable")
+                // has no quota at all — show it as an info row, not as a 0% pool.
+                if (m.quotaInfo.remainingFraction === undefined && !m.quotaInfo.resetTime) {
+                    return {
+                        label: m.label,
+                        remaining: 100,
+                        resetTime: '',
+                        displayValue: m.tagTitle || 'Unavailable'
+                    };
+                }
                 const resetTimeStr = m.quotaInfo.resetTime;
                 let resetLabel = 'Ready';
                 let absResetLabel = '';
