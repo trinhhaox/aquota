@@ -1,5 +1,12 @@
 # Changelog - Aquota
 
+## [2.2.4] - 2026-11-25
+
+### Nguồn dữ liệu Antigravity tùy chỉnh & Hiển thị trạng thái Offline rõ ràng
+- **Hỗ trợ nguồn quota Antigravity cắm ngoài (`sqm.antigravity.command`):** Cho phép khai báo lệnh CLI trả về JSON quota (hỗ trợ cả định dạng chuẩn `{ name, email, tier, quotas }`, mảng quota trực tiếp hoặc JSON `GetUserStatus`) ngay trong Cài đặt Sidebar hoặc VS Code Settings; tự động fallback về local server khi để trống.
+- **Hiển thị rõ trạng thái Offline / Lỗi của Antigravity:** Luôn giữ mục `ANTIGRAVITY IDE` trên tooltip SVG (`Offline · Run /usage in agy` / `Error · Check Aquota log`) và thẻ trạng thái trên Sidebar Dashboard thay vì âm thầm ẩn đi; dòng footer tự lấy tên/gói từ Claude khi Antigravity ngoại tuyến.
+- **Cải thiện chẩn đoán & tương thích đường dẫn IDE mới:** Ghi đầy đủ log discovery của Antigravity ra Output Channel `Aquota` và bổ sung `~/.antigravity-ide/extensions` vào danh sách tìm binary Claude CLI.
+
 ## [2.2.3] - 2026-11-11
 
 ### Cập nhật thống kê model theo quota thật (Antigravity & Claude Code)

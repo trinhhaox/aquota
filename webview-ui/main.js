@@ -7,6 +7,10 @@ const TRANSLATIONS = {
         settingsTitle: 'Cài đặt',
         serverOfflineTitle: 'Máy chủ Antigravity Ngoại Tuyến',
         serverOfflineDesc: 'Hãy đảm bảo Antigravity IDE đang chạy để theo dõi hạn mức mô hình.',
+        antigravityOfflineBadge: 'Ngoại tuyến',
+        antigravityOfflineHint: 'Không kết nối được local server Antigravity IDE. Dùng /usage trong agy CLI hoặc cấu hình lệnh nguồn dữ liệu trong Cài đặt.',
+        antigravityCommandLabel: 'Lệnh nguồn Antigravity (JSON)',
+        antigravityCommandPlaceholder: 'VD: my-quota-cli --json',
         noActiveTitle: 'Không có dịch vụ AI nào đang hoạt động',
         noActiveDesc: 'Hãy đảm bảo Antigravity IDE đang chạy, hoặc đăng nhập Claude Code / Codex.',
         connecting: 'Đang kết nối dịch vụ AI...',
@@ -57,6 +61,10 @@ const TRANSLATIONS = {
         settingsTitle: 'Settings',
         serverOfflineTitle: 'Antigravity Server Offline',
         serverOfflineDesc: 'Ensure Antigravity IDE is running to monitor model quotas.',
+        antigravityOfflineBadge: 'Offline',
+        antigravityOfflineHint: 'Antigravity local server not detected. Run /usage in agy CLI or set a custom quota command in Settings.',
+        antigravityCommandLabel: 'Antigravity Quota Command (JSON)',
+        antigravityCommandPlaceholder: 'e.g. my-quota-cli --json',
         noActiveTitle: 'No AI Services Active',
         noActiveDesc: 'Ensure Antigravity IDE is running, or sign in to Claude Code / Codex.',
         connecting: 'Connecting to AI services...',
@@ -237,6 +245,18 @@ function renderDashboard(data) {
         html += ag.limitGroups.map(group => renderLimitGroup(group)).join('');
     } else if (ag) {
         html += renderServiceGroup('Antigravity', ag);
+    } else {
+        html += renderLimitGroup({
+            id: 'antigravity-offline',
+            title: SERVICE_META.Antigravity.title,
+            infoTooltip: t('antigravityOfflineHint'),
+            items: [{
+                label: t('serverOfflineTitle'),
+                remaining: 0,
+                displayValue: t('antigravityOfflineBadge'),
+                description: t('antigravityOfflineHint')
+            }]
+        }, '', SERVICE_META.Antigravity.icon);
     }
 
     // 2. External Services (Claude Code CLI & Codex if logged in)
@@ -302,9 +322,10 @@ function renderLimitGroup(group, subtitle, icon) {
         
         let statRightHtml = '';
         if (item.displayValue !== undefined && item.displayValue !== '') {
+            const isMuted = item.displayValue === 'Unavailable' || item.displayValue === 'Offline' || item.displayValue === 'Ngoại tuyến';
             statRightHtml = `
                 <div class="limit-stat">
-                    <span class="limit-badge-value">${escapeHtml(item.displayValue)}</span>
+                    <span class="limit-badge-value${isMuted ? ' muted' : ''}">${escapeHtml(item.displayValue)}</span>
                 </div>
             `;
         } else if (!isNotApplicable) {
@@ -598,6 +619,7 @@ function renderSettingsData(settings) {
             { value: 'compact', label: t('sbCompact') },
             { value: 'dot', label: t('sbDot') }
         ]},
+        { key: 'antigravity.command', label: t('antigravityCommandLabel'), type: 'text', placeholder: t('antigravityCommandPlaceholder') },
     ];
 
     const panel = document.getElementById('settings-panel');
@@ -605,6 +627,13 @@ function renderSettingsData(settings) {
 
     fields.forEach(f => {
         const val = settings[f.key] ?? '';
+        if (f.type === 'text') {
+            html += '<div class="settings-row settings-row-stacked">';
+            html += `<label class="settings-label">${escapeHtml(f.label)}</label>`;
+            html += `<input type="text" class="settings-input" data-key="${f.key}" value="${escapeHtml(String(val))}" placeholder="${escapeHtml(f.placeholder || '')}">`;
+            html += '</div>';
+            return;
+        }
         html += '<div class="settings-row">';
         html += `<label class="settings-label">${escapeHtml(f.label)}</label>`;
 

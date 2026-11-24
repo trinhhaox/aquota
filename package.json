@@ -2,7 +2,7 @@
   "name": "aquota",
   "displayName": "Aquota",
   "description": "Real-time AI Quota Monitor for Antigravity IDE, Claude Code, and OpenAI Codex.",
-  "version": "2.2.3",
+  "version": "2.2.4",
   "publisher": "BiViPi",
   "author": {
     "name": "BiViPi",
@@ -123,6 +123,11 @@
           ],
           "default": "both",
           "description": "Which Claude.ai usage windows to display in the dashboard."
+        },
+        "sqm.antigravity.command": {
+          "type": "string",
+          "default": "",
+          "description": "Optional external CLI command that prints Antigravity quota JSON to stdout (supports { name, email, tier, quotas: [{ label, remaining, resetTime }] }, a quota array, or GetUserStatus JSON)."
         }
       }
     }

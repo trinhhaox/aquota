@@ -455,7 +455,10 @@ var QuotaService = class {
           }).filter(Boolean);
           stdout = JSON.stringify(arr);
         }
-        if (!stdout || stdout.trim() === "" || stdout.trim() === "[]") return false;
+        if (!stdout || stdout.trim() === "" || stdout.trim() === "[]") {
+          this.log("Antigravity local server discovery: no process matching csrf_token");
+          return false;
+        }
         let processes = [];
         try {
           const parsed = JSON.parse(stdout.trim());
@@ -474,11 +477,15 @@ var QuotaService = class {
           for (const port of listeningPorts) {
             if (await this.testConnection(port, token)) {
               this.serverInfo = { port, token };
+              this.log(`Antigravity local server discovered on port ${port} (PID ${pid})`);
               return true;
             }
           }
         }
+        this.log("Antigravity local server discovery: no responsive port found");
       } catch (e) {
+        const detail = e?.code === 1 && !e?.stderr ? "no process matching csrf_token" : e?.message || String(e);
+        this.log(`Antigravity discovery failed: ${detail}`);
         console.error("[SQM] Discovery failed:", e);
       } finally {
         this.discovering = null;
@@ -527,7 +534,97 @@ var QuotaService = class {
       req.end();
     });
   }
+  formatResetTimeValue(raw) {
+    if (!raw || raw === "Ready") return { resetTime: "Ready", absResetTime: "" };
+    if (/^\d{4}-\d{2}-\d{2}T/.test(raw) || !isNaN(Date.parse(raw))) {
+      const resetDate = new Date(raw);
+      if (!isNaN(resetDate.getTime())) {
+        const diffMs = resetDate.getTime() - Date.now();
+        if (diffMs <= 0) return { resetTime: "Refreshing...", absResetTime: "" };
+        const mins = Math.floor(diffMs / 6e4);
+        const resetTime = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+        const absHours = resetDate.getHours().toString().padStart(2, "0");
+        const absMins = resetDate.getMinutes().toString().padStart(2, "0");
+        return { resetTime, absResetTime: `(${absHours}h${absMins})` };
+      }
+    }
+    return { resetTime: raw, absResetTime: "" };
+  }
+  parseCustomCommandOutput(parsed) {
+    if (parsed?.userStatus) {
+      return this.parseResponse(parsed);
+    }
+    const rawList = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.quotas) ? parsed.quotas : [];
+    const quotas = rawList.filter((item) => item && typeof item === "object" && typeof item.label === "string").map((item) => {
+      const label = item.label.trim();
+      const themeColor = item.themeColor || (label.includes("Gemini") ? "#40C4FF" : label.includes("Claude") ? "#FFAB40" : "#69F0AE");
+      if (item.displayValue && !String(item.displayValue).endsWith("%")) {
+        return {
+          label,
+          remaining: 100,
+          resetTime: "",
+          displayValue: String(item.displayValue),
+          themeColor
+        };
+      }
+      let remaining;
+      if (typeof item.remaining === "number") {
+        remaining = Math.max(0, Math.min(100, item.remaining));
+      } else if (typeof item.remainingFraction === "number") {
+        remaining = Math.max(0, Math.min(100, item.remainingFraction * 100));
+      } else {
+        remaining = 0;
+      }
+      const { resetTime, absResetTime } = this.formatResetTimeValue(item.resetTime || item.resetsAt || item.resets_at);
+      return {
+        label,
+        remaining,
+        resetTime,
+        absResetTime: item.absResetTime || absResetTime,
+        themeColor,
+        style: item.style
+      };
+    });
+    return {
+      name: parsed?.name || "Antigravity",
+      email: parsed?.email || "",
+      tier: parsed?.tier || "",
+      quotas,
+      isAuthenticated: true
+    };
+  }
+  async fetchStatusFromCustomCommand(command) {
+    this.log(`Fetching Antigravity status via custom command...`);
+    try {
+      const { stdout } = await execWithTimeout(command, 1e4);
+      const trimmed = stdout.trim();
+      if (!trimmed) {
+        throw new Error("Command returned empty output");
+      }
+      const parsed = JSON.parse(trimmed);
+      const status = this.parseCustomCommandOutput(parsed);
+      if (status.quotas.length === 0) {
+        return { ...status, error: "Custom command returned no quota entries" };
+      }
+      return status;
+    } catch (e) {
+      const msg = e?.message || "Custom command failed";
+      this.log(`Custom Antigravity command failed: ${msg}`);
+      return {
+        name: "Antigravity",
+        email: "",
+        tier: "",
+        quotas: [],
+        isAuthenticated: false,
+        error: msg
+      };
+    }
+  }
   async fetchStatus() {
+    const customCmd = vscode.workspace.getConfiguration("sqm").get("antigravity.command")?.trim();
+    if (customCmd) {
+      return this.fetchStatusFromCustomCommand(customCmd);
+    }
     if (!this.serverInfo) {
       const found = await this.discoverLocalServer();
       if (!found) return null;
@@ -661,7 +758,11 @@ var QuotaService = class {
         }
         if (!binPath) {
           const home = os2.homedir();
-          for (const dir of [path2.join(home, ".antigravity", "extensions"), path2.join(home, ".vscode", "extensions")]) {
+          for (const dir of [
+            path2.join(home, ".antigravity-ide", "extensions"),
+            path2.join(home, ".antigravity", "extensions"),
+            path2.join(home, ".vscode", "extensions")
+          ]) {
             try {
               const cmd = process.platform === "win32" ? `Get-ChildItem -Path '${dir}' -Filter '${exeName}' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName` : `find "${dir}" -name "${exeName}" -type f 2>/dev/null | head -n 1`;
               const { stdout } = await execWithTimeout(cmd, 6e3);
@@ -910,7 +1011,8 @@ var SidebarProvider = class _SidebarProvider {
         "refreshInterval": sqm.get("refreshInterval") ?? 5,
         "enableNotifications": sqm.get("enableNotifications") !== false,
         "notifyThreshold": sqm.get("notifyThreshold") ?? 20,
-        "statusBar.mode": sqm.get("statusBar.mode") || "full"
+        "statusBar.mode": sqm.get("statusBar.mode") || "full",
+        "antigravity.command": sqm.get("antigravity.command") || ""
       }
     });
   }
@@ -1263,6 +1365,9 @@ function activate(context) {
     if (e.affectsConfiguration("sqm.refreshInterval")) {
       startAutoRefresh();
     }
+    if (e.affectsConfiguration("sqm.antigravity.command")) {
+      triggerRefresh();
+    }
     if (e.affectsConfiguration("sqm.statusBar.mode") || e.affectsConfiguration("sqm.statusBar.usagePeriod") || e.affectsConfiguration("sqm.language")) {
       refreshStatusBar();
     }
@@ -1360,9 +1465,11 @@ function buildTooltipSVG(data) {
       const sessionReset = formatSessionResetText(q.resetTime, q.absResetTime);
       if (!isPercent) {
         const infoHeight = 24;
+        const val = q.displayValue || "";
+        const valColor = val === "Unavailable" || val.startsWith("Offline") ? "#94A3B8" : val.startsWith("Error") ? "#F59E0B" : "#69F0AE";
         contentHtml += `<rect x="${padding}" y="${currentY}" width="${width - padding * 2}" height="${infoHeight - 4}" rx="5" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-opacity="0.04" stroke-width="0.8"/>`;
         contentHtml += `<text x="${padding + 8}" y="${currentY + 13.5}" font-family="system-ui, -apple-system, sans-serif" font-size="9" font-weight="600" fill="#94A3B8">${escapeXml(cleanName)}</text>`;
-        contentHtml += `<text x="${width - padding - 8}" y="${currentY + 13.5}" text-anchor="end" font-family="ui-monospace, SFMono-Regular, monospace" font-size="9.5" font-weight="700" fill="${q.displayValue === "Unavailable" ? "#64748B" : "#69F0AE"}">${escapeXml(q.displayValue || "")}</text>`;
+        contentHtml += `<text x="${width - padding - 8}" y="${currentY + 13.5}" text-anchor="end" font-family="ui-monospace, SFMono-Regular, monospace" font-size="9.5" font-weight="700" fill="${valColor}">${escapeXml(val)}</text>`;
         currentY += infoHeight;
       } else {
         const cardHeight = 42;
@@ -1402,9 +1509,23 @@ function buildTooltipSVG(data) {
     });
     currentY += 4;
   };
-  if (data.antigravity?.quotas) {
+  if (data.antigravity?.quotas && data.antigravity.quotas.length > 0) {
     const pooled = groupSharedPools(data.antigravity.quotas);
     renderGroupSection("ANTIGRAVITY IDE", pooled, "#38BDF8");
+  } else if (data.antigravity?.error) {
+    renderGroupSection("ANTIGRAVITY IDE", [{
+      label: "Status",
+      remaining: 100,
+      resetTime: "",
+      displayValue: "Error \xB7 Check Aquota log"
+    }], "#38BDF8");
+  } else {
+    renderGroupSection("ANTIGRAVITY IDE", [{
+      label: "Status",
+      remaining: 100,
+      resetTime: "",
+      displayValue: "Offline \xB7 Run /usage in agy"
+    }], "#38BDF8");
   }
   if (data.claude?.quotas) {
     renderGroupSection("CLAUDE CODE (CLI)", data.claude.quotas, "#FB923C");
@@ -1535,8 +1656,8 @@ function refreshStatusBar() {
   tooltip.appendMarkdown(`![Quota Info](data:image/svg+xml;base64,${base64})
 
 `);
-  const name = latestQuotaData.antigravity?.name || "User";
-  const tier = latestQuotaData.antigravity?.tier || "";
+  const name = latestQuotaData.antigravity?.name || latestQuotaData.claude?.name || "User";
+  const tier = latestQuotaData.antigravity?.tier || (latestQuotaData.claude?.isAuthenticated ? latestQuotaData.claude.tier : "") || "";
   const tierDisplay = tier ? ` (${tier})` : "";
   const lang = vscode5.workspace.getConfiguration("sqm").get("language") || "vi";
   const isVi = lang === "vi";

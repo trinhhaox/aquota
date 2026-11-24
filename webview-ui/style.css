@@ -243,6 +243,12 @@ body {
     letter-spacing: 0.02em;
 }
 
+.limit-badge-value.muted {
+    color: #94A3B8;
+    background: rgba(148, 163, 184, 0.12);
+    border-color: rgba(148, 163, 184, 0.28);
+}
+
 .info-icon {
     font-size: 12px;
     color: rgba(255, 255, 255, 0.4);
@@ -599,6 +605,28 @@ body {
     border-radius: 6px;
     font-size: 11px;
     outline: none;
+}
+
+.settings-row-stacked {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+}
+
+.settings-input {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--ui-card-border);
+    color: #FFFFFF;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    outline: none;
+    width: 100%;
+}
+
+.settings-input:focus {
+    border-color: #38BDF8;
 }
 
 .settings-select:focus {

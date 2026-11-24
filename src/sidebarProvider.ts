@@ -73,6 +73,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 'enableNotifications': sqm.get<boolean>('enableNotifications') !== false,
                 'notifyThreshold': sqm.get<number>('notifyThreshold') ?? 20,
                 'statusBar.mode': sqm.get<string>('statusBar.mode') || 'full',
+                'antigravity.command': sqm.get<string>('antigravity.command') || '',
             }
         });
     }

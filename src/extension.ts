@@ -112,6 +112,9 @@ export function activate(context: vscode.ExtensionContext) {
         if (e.affectsConfiguration("sqm.refreshInterval")) {
             startAutoRefresh();
         }
+        if (e.affectsConfiguration("sqm.antigravity.command")) {
+            triggerRefresh();
+        }
         if (e.affectsConfiguration("sqm.statusBar.mode") || e.affectsConfiguration("sqm.statusBar.usagePeriod") || e.affectsConfiguration("sqm.language")) {
             refreshStatusBar();
         }
@@ -261,11 +264,15 @@ function buildTooltipSVG(data: DashboardData): string {
             const sessionReset = formatSessionResetText(q.resetTime, q.absResetTime);
 
             if (!isPercent) {
-                // Informational row (e.g. Active Model)
+                // Informational row (e.g. Active Model, Offline, Unavailable)
                 const infoHeight = 24;
+                const val = q.displayValue || '';
+                const valColor = val === 'Unavailable' || val.startsWith('Offline')
+                    ? '#94A3B8'
+                    : (val.startsWith('Error') ? '#F59E0B' : '#69F0AE');
                 contentHtml += `<rect x="${padding}" y="${currentY}" width="${width - padding * 2}" height="${infoHeight - 4}" rx="5" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-opacity="0.04" stroke-width="0.8"/>`;
                 contentHtml += `<text x="${padding + 8}" y="${currentY + 13.5}" font-family="system-ui, -apple-system, sans-serif" font-size="9" font-weight="600" fill="#94A3B8">${escapeXml(cleanName)}</text>`;
-                contentHtml += `<text x="${width - padding - 8}" y="${currentY + 13.5}" text-anchor="end" font-family="ui-monospace, SFMono-Regular, monospace" font-size="9.5" font-weight="700" fill="${q.displayValue === 'Unavailable' ? '#64748B' : '#69F0AE'}">${escapeXml(q.displayValue || '')}</text>`;
+                contentHtml += `<text x="${width - padding - 8}" y="${currentY + 13.5}" text-anchor="end" font-family="ui-monospace, SFMono-Regular, monospace" font-size="9.5" font-weight="700" fill="${valColor}">${escapeXml(val)}</text>`;
                 currentY += infoHeight;
             } else {
                 // Modern 3-tier card: Row 1 = Name + %, Row 2 = Progress Bar, Row 3 = SubLabel + Reset
@@ -321,9 +328,23 @@ function buildTooltipSVG(data: DashboardData): string {
         currentY += 4;
     };
 
-    if (data.antigravity?.quotas) {
+    if (data.antigravity?.quotas && data.antigravity.quotas.length > 0) {
         const pooled = groupSharedPools(data.antigravity.quotas);
         renderGroupSection("ANTIGRAVITY IDE", pooled, '#38BDF8');
+    } else if (data.antigravity?.error) {
+        renderGroupSection("ANTIGRAVITY IDE", [{
+            label: 'Status',
+            remaining: 100,
+            resetTime: '',
+            displayValue: 'Error · Check Aquota log'
+        }], '#38BDF8');
+    } else {
+        renderGroupSection("ANTIGRAVITY IDE", [{
+            label: 'Status',
+            remaining: 100,
+            resetTime: '',
+            displayValue: 'Offline · Run /usage in agy'
+        }], '#38BDF8');
     }
 
     if (data.claude?.quotas) {
@@ -479,8 +500,8 @@ function refreshStatusBar() {
     tooltip.supportHtml = true;
     tooltip.appendMarkdown(`![Quota Info](data:image/svg+xml;base64,${base64})\n\n`);
 
-    const name = latestQuotaData.antigravity?.name || "User";
-    const tier = latestQuotaData.antigravity?.tier || "";
+    const name = latestQuotaData.antigravity?.name || latestQuotaData.claude?.name || "User";
+    const tier = latestQuotaData.antigravity?.tier || (latestQuotaData.claude?.isAuthenticated ? latestQuotaData.claude.tier : "") || "";
     const tierDisplay = tier ? ` (${tier})` : "";
     const lang = vscode.workspace.getConfiguration("sqm").get<string>("language") || "vi";
     const isVi = lang === "vi";

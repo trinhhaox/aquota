@@ -334,7 +334,10 @@ export class QuotaService {
                     stdout = JSON.stringify(arr);
                 }
 
-                if (!stdout || stdout.trim() === "" || stdout.trim() === "[]") return false;
+                if (!stdout || stdout.trim() === "" || stdout.trim() === "[]") {
+                    this.log('Antigravity local server discovery: no process matching csrf_token');
+                    return false;
+                }
 
                 let processes: any[] = [];
                 try {
@@ -357,11 +360,16 @@ export class QuotaService {
                     for (const port of listeningPorts) {
                         if (await this.testConnection(port, token)) {
                             this.serverInfo = { port, token };
+                            this.log(`Antigravity local server discovered on port ${port} (PID ${pid})`);
                             return true;
                         }
                     }
                 }
-            } catch (e) {
+                this.log('Antigravity local server discovery: no responsive port found');
+            } catch (e: any) {
+                // `grep csrf_token` exits with code 1 when no matching process is running
+                const detail = e?.code === 1 && !e?.stderr ? 'no process matching csrf_token' : (e?.message || String(e));
+                this.log(`Antigravity discovery failed: ${detail}`);
                 console.error('[SQM] Discovery failed:', e);
             } finally {
                 this.discovering = null;
@@ -408,7 +416,112 @@ export class QuotaService {
         });
     }
 
+    private formatResetTimeValue(raw: string | undefined): { resetTime: string; absResetTime: string } {
+        if (!raw || raw === 'Ready') return { resetTime: 'Ready', absResetTime: '' };
+        // ISO timestamp or parseable date string → relative countdown + (HHhMM)
+        if (/^\d{4}-\d{2}-\d{2}T/.test(raw) || !isNaN(Date.parse(raw))) {
+            const resetDate = new Date(raw);
+            if (!isNaN(resetDate.getTime())) {
+                const diffMs = resetDate.getTime() - Date.now();
+                if (diffMs <= 0) return { resetTime: 'Refreshing...', absResetTime: '' };
+                const mins = Math.floor(diffMs / 60000);
+                const resetTime = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+                const absHours = resetDate.getHours().toString().padStart(2, '0');
+                const absMins = resetDate.getMinutes().toString().padStart(2, '0');
+                return { resetTime, absResetTime: `(${absHours}h${absMins})` };
+            }
+        }
+        return { resetTime: raw, absResetTime: '' };
+    }
+
+    private parseCustomCommandOutput(parsed: any): UserStatus {
+        if (parsed?.userStatus) {
+            return this.parseResponse(parsed);
+        }
+
+        const rawList: any[] = Array.isArray(parsed)
+            ? parsed
+            : (Array.isArray(parsed?.quotas) ? parsed.quotas : []);
+
+        const quotas: QuotaInfo[] = rawList
+            .filter((item: any) => item && typeof item === 'object' && typeof item.label === 'string')
+            .map((item: any) => {
+                const label = item.label.trim();
+                const themeColor = item.themeColor || (label.includes('Gemini') ? '#40C4FF' : (label.includes('Claude') ? '#FFAB40' : '#69F0AE'));
+
+                if (item.displayValue && !String(item.displayValue).endsWith('%')) {
+                    return {
+                        label,
+                        remaining: 100,
+                        resetTime: '',
+                        displayValue: String(item.displayValue),
+                        themeColor
+                    };
+                }
+
+                let remaining: number;
+                if (typeof item.remaining === 'number') {
+                    remaining = Math.max(0, Math.min(100, item.remaining));
+                } else if (typeof item.remainingFraction === 'number') {
+                    remaining = Math.max(0, Math.min(100, item.remainingFraction * 100));
+                } else {
+                    remaining = 0;
+                }
+
+                const { resetTime, absResetTime } = this.formatResetTimeValue(item.resetTime || item.resetsAt || item.resets_at);
+                return {
+                    label,
+                    remaining,
+                    resetTime,
+                    absResetTime: item.absResetTime || absResetTime,
+                    themeColor,
+                    style: item.style
+                };
+            });
+
+        return {
+            name: parsed?.name || 'Antigravity',
+            email: parsed?.email || '',
+            tier: parsed?.tier || '',
+            quotas,
+            isAuthenticated: true
+        };
+    }
+
+    private async fetchStatusFromCustomCommand(command: string): Promise<UserStatus> {
+        this.log(`Fetching Antigravity status via custom command...`);
+        try {
+            const { stdout } = await execWithTimeout(command, 10000);
+            const trimmed = stdout.trim();
+            if (!trimmed) {
+                throw new Error('Command returned empty output');
+            }
+            const parsed = JSON.parse(trimmed);
+            const status = this.parseCustomCommandOutput(parsed);
+            if (status.quotas.length === 0) {
+                return { ...status, error: 'Custom command returned no quota entries' };
+            }
+            return status;
+        } catch (e: any) {
+            const msg = e?.message || 'Custom command failed';
+            this.log(`Custom Antigravity command failed: ${msg}`);
+            return {
+                name: 'Antigravity',
+                email: '',
+                tier: '',
+                quotas: [],
+                isAuthenticated: false,
+                error: msg
+            };
+        }
+    }
+
     async fetchStatus(): Promise<UserStatus | null> {
+        const customCmd = vscode.workspace.getConfiguration('sqm').get<string>('antigravity.command')?.trim();
+        if (customCmd) {
+            return this.fetchStatusFromCustomCommand(customCmd);
+        }
+
         if (!this.serverInfo) {
             const found = await this.discoverLocalServer();
             if (!found) return null;
@@ -564,7 +677,11 @@ export class QuotaService {
                 }
                 if (!binPath) {
                     const home = os.homedir();
-                    for (const dir of [path.join(home, '.antigravity', 'extensions'), path.join(home, '.vscode', 'extensions')]) {
+                    for (const dir of [
+                        path.join(home, '.antigravity-ide', 'extensions'),
+                        path.join(home, '.antigravity', 'extensions'),
+                        path.join(home, '.vscode', 'extensions')
+                    ]) {
                         try {
                             // On win32 execWithTimeout already runs commands inside
                             // powershell.exe — no nested "powershell -Command" prefix needed.

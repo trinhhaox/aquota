@@ -21,7 +21,7 @@ export interface QuotaInfo {
     themeColor?: string;
     absResetTime?: string;
     displayValue?: string;
-    style?: 'segmented' | 'fluid';
+    style?: string;
 }
 
 export interface UserStatus {
